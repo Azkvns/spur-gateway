@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=bin/lib/env.sh
+. "$ROOT/bin/lib/env.sh"
+
+proxy_ready() {
+  case "${PROXY_READY:-}" in
+    1) return 0 ;;
+    0) return 1 ;;
+  esac
+  if command -v nc >/dev/null 2>&1; then
+    nc -z 127.0.0.1 "$SOCKS_PORT"
+  else
+    (echo >/dev/tcp/127.0.0.1/"$SOCKS_PORT") 2>/dev/null
+  fi
+}
+
+# The env file holds the subscription URL and other gateway settings that the
+# child must never see, so it is loaded in a subshell and only ports come back.
+env_file_port() {
+  local file="$1" key="$2"
+  (
+    load_env "$file" >/dev/null 2>&1 || :
+    printf '%s' "${!key:-}"
+  )
+}
+
+env_file="${SPUR_GW_ENV_FILE:-$ROOT/.env}"
+if [ ! -f "$env_file" ]; then
+  env_file="$ROOT/.env.example"
+fi
+file_socks_port=""
+file_http_port=""
+if [ -f "$env_file" ]; then
+  file_socks_port="$(env_file_port "$env_file" SOCKS_PORT)"
+  file_http_port="$(env_file_port "$env_file" HTTP_PORT)"
+fi
+unset SPUR_SUB_URL
+SOCKS_PORT="${file_socks_port:-${SOCKS_PORT:-1090}}"
+HTTP_PORT="${file_http_port:-${HTTP_PORT:-8128}}"
+
+if ! proxy_ready; then
+  echo "spur-gw up first" >&2
+  exit 1
+fi
+
+export ALL_PROXY="socks5h://127.0.0.1:${SOCKS_PORT}"
+export HTTPS_PROXY="http://127.0.0.1:${HTTP_PORT}"
+export HTTP_PROXY="http://127.0.0.1:${HTTP_PORT}"
+export NO_PROXY="localhost,127.0.0.1"
+
+spur_ssh_proxy_command() {
+  if command -v nc >/dev/null 2>&1; then
+    printf "nc -X 5 -x 127.0.0.1:%s %%h %%p" "$SOCKS_PORT"
+    return 0
+  fi
+  return 1
+}
+
+spur_enable_ssh_proxy() {
+  local proxy_cmd
+  proxy_cmd="$(spur_ssh_proxy_command)" || return 0
+  export GIT_SSH_COMMAND="ssh -o ProxyCommand='${proxy_cmd}'"
+  export SSH_PROXY_COMMAND="$proxy_cmd"
+}
+
+if [ "${SPUR_GW_DRY_RUN:-0}" = "1" ]; then
+  if [ "${1:-}" = git ] || [ "${1:-}" = ssh ] || [ "${1:-}" = scp ] || [ "${1:-}" = rsync ]; then
+    spur_enable_ssh_proxy
+  fi
+  exec env
+fi
+
+if [ "$#" -eq 0 ]; then
+  echo "usage: spur <command...>" >&2
+  exit 2
+fi
+
+case "$1" in
+  git|ssh|scp|rsync)
+    spur_enable_ssh_proxy
+    ;;
+esac
+
+exec "$@"

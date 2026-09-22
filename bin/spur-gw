@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+. "$ROOT/bin/lib/env.sh"
+
+usage() {
+  echo "usage: spur-gw up|down|status" >&2
+}
+
+compose_is_running() {
+  if [ -n "${COMPOSE_RUNNING:-}" ]; then
+    [ "$COMPOSE_RUNNING" = "1" ]
+    return
+  fi
+  docker compose -f "$ROOT/docker-compose.yml" --project-directory "$ROOT" \
+    ps --status running --services | grep -qx gateway
+}
+
+container_health_state() {
+  if [ -n "${SPUR_HEALTH_FILE:-}" ] && [ -f "$SPUR_HEALTH_FILE" ]; then
+    sed -n 's/^state=//p' "$SPUR_HEALTH_FILE"
+    return 0
+  fi
+  if [ "${SPUR_GW_DRY_RUN:-0}" = "1" ]; then
+    return 0
+  fi
+  docker compose -f "$ROOT/docker-compose.yml" --project-directory "$ROOT" \
+    exec -T gateway sh -c 'sed -n "s/^state=//p" /run/spur-gw-health'
+}
+
+cmd="${1:-}"
+case "$cmd" in
+  up)
+    envfile="${SPUR_GW_ENV_FILE:-$ROOT/.env}"
+    _spur_mock_was_set=0
+    if [ -n "${SPUR_MOCK+x}" ]; then
+      _host_spur_mock="$SPUR_MOCK"
+      _spur_mock_was_set=1
+    fi
+    if [ -f "$envfile" ]; then
+      load_env "$envfile"
+    fi
+    if [ "$_spur_mock_was_set" = 1 ]; then
+      export SPUR_MOCK="$_host_spur_mock"
+    fi
+    require_env
+    if [ "${SPUR_GW_DRY_RUN:-0}" = "1" ]; then
+      echo "would up"
+      exit 0
+    fi
+    docker compose -f "$ROOT/docker-compose.yml" --project-directory "$ROOT" up -d
+    ;;
+  down)
+    if [ "${SPUR_GW_DRY_RUN:-0}" = "1" ]; then
+      echo "would down"
+      exit 0
+    fi
+    docker compose -f "$ROOT/docker-compose.yml" --project-directory "$ROOT" down
+    ;;
+  status)
+    if compose_is_running; then
+      echo "compose=running"
+      echo "health=$(container_health_state)"
+    else
+      echo "compose=stopped"
+    fi
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac
