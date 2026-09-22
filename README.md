@@ -1,24 +1,39 @@
-# spur-gateway
+# Spur Gateway
 
-Opt-in local SOCKS/HTTP gateway.
+[![test](https://github.com/Azkvns/spur-gateway/actions/workflows/test.yml/badge.svg)](https://github.com/Azkvns/spur-gateway/actions/workflows/test.yml)
+[![license](https://img.shields.io/github/license/Azkvns/spur-gateway)](LICENSE)
+[![GHCR](https://img.shields.io/badge/GHCR-spur--gateway-blue)](https://github.com/Azkvns/spur-gateway/pkgs/container/spur-gateway)
+[![docs](https://img.shields.io/badge/docs-GitHub%20Pages-brightgreen)](https://azkvns.github.io/spur-gateway/)
 
-Full documentation (install, usage, and configuration) will be published
-on GitHub Pages. This placeholder keeps the repository usable until then.
+Opt-in local **SOCKS5** (`127.0.0.1:1090`) and **HTTP CONNECT** (`127.0.0.1:8128`) gateway on Docker + sing-box-extended.
+
+Host routes stay unchanged. Wrap individual commands with `spur`, or point a browser profile at the loopback proxy.
+
+## Quick start
+
+```bash
+git clone https://github.com/Azkvns/spur-gateway.git
+cd spur-gateway
+make env                 # creates .env — set SPUR_SUB_URL
+export PATH="$PWD/bin:$PATH"
+make up
+spur curl -sI https://example.com
+```
+
+Or pull a released image: `ghcr.io/azkvns/spur-gateway:latest`.
+
+## Documentation
+
+- English docs (GitHub Pages): https://azkvns.github.io/spur-gateway/
+- Russian overview: https://azkvns.github.io/spur-gateway/ru/
+- Source: [`docs/`](docs/)
+
+## CI and releases
+
+- Every PR runs `test` (`bash tests/run.sh`).
+- Same-repo PRs can squash auto-merge after green checks; **fork PRs are never auto-merged**.
+- Each merge to `main` tags a semver release and pushes multi-arch images to GHCR (`:vX.Y.Z`, `:latest`). Use `[skip release]` in the subject to skip.
 
 ## License
 
-MIT — see `LICENSE`. Third-party runtime notices: see `NOTICE`.
-
-## CI
-
-Pull requests run the `test` workflow (`bash tests/run.sh`).
-
-Internal PRs (same repository branch) enable squash auto-merge after checks succeed.
-Pull requests from forks run tests but are **not** auto-merged — they need a manual review and merge.
-
-## Releases
-
-Every squash-merge into `main` runs the `release` workflow: semver tag bump (conventional commits), GitHub Release, and multi-arch image push to `ghcr.io/azkvns/spur-gateway` (`:vX.Y.Z`, `:latest`, `:sha-…`).
-
-Include `[skip release]` in the commit subject to skip tagging for that merge.
-
+MIT. Third-party notices: [NOTICE](NOTICE) (sing-box-extended is GPL-3.0+).

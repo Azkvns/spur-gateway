@@ -1,0 +1,27 @@
+site_name: Spur Gateway
+site_description: Opt-in local SOCKS5/HTTP CONNECT gateway on Docker + sing-box-extended
+repo_url: https://github.com/Azkvns/spur-gateway
+repo_name: Azkvns/spur-gateway
+edit_uri: ""
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Quick start: quickstart.md
+  - CLI: cli.md
+  - Configuration: configuration.md
+  - Docker: docker.md
+  - Operations: operations.md
+  - Русский: ru/index.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
