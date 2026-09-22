@@ -16,3 +16,9 @@ Pull requests run the `test` workflow (`bash tests/run.sh`).
 Internal PRs (same repository branch) enable squash auto-merge after checks succeed.
 Pull requests from forks run tests but are **not** auto-merged — they need a manual review and merge.
 
+## Releases
+
+Every squash-merge into `main` runs the `release` workflow: semver tag bump (conventional commits), GitHub Release, and multi-arch image push to `ghcr.io/azkvns/spur-gateway` (`:vX.Y.Z`, `:latest`, `:sha-…`).
+
+Include `[skip release]` in the commit subject to skip tagging for that merge.
+
