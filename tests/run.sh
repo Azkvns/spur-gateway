@@ -22,3 +22,4 @@ if [ -f "$ROOT/tests/test_render_config.py" ]; then
 else
   echo "==> skip python unittest (no tests/test_render_config.py yet)"
 fi
+python3 -m unittest -v tests/test_dispatch_release.py

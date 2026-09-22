@@ -29,3 +29,26 @@ jobs:
           gh pr merge "${{ github.event.pull_request.number }}" \
             --repo "${{ github.repository }}" \
             --squash --auto --delete-branch
+
+  # GITHUB_TOKEN merges do not emit on: push, so release.yml never starts.
+  # workflow_dispatch still runs. This job waits out the squash merge, then starts it.
+  dispatch-release:
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request')
+      || (github.event_name == 'pull_request' && github.event.action == 'ready_for_review' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false)
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+      checks: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Dispatch release after merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha }}
+        run: python3 .github/scripts/dispatch_release.py
