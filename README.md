@@ -104,8 +104,9 @@ Chrome:
 ## CI and releases
 
 - Every PR runs `test` (`bash tests/run.sh`).
-- Same-repo PRs can squash auto-merge after green checks; **fork PRs are never auto-merged**.
-- Each merge to `main` tags a semver release and pushes multi-arch images to GHCR (`:vX.Y.Z`, `:latest`). Use `[skip release]` in the subject to skip.
+- Same-repo PRs squash-merge after green checks; the head branch is deleted. Fork PRs are never auto-merged. Merge commits and rebase merges are disabled.
+- Each merge to `main` tags a semver release and pushes multi-arch images to GHCR (`:vX.Y.Z`, `:latest`). Use `[skip release]` in the subject to skip. Tags matching `v*` cannot be moved or deleted.
+- Dependabot opens weekly updates for GitHub Actions and `requirements-docs.txt`.
 
 ## License
 
