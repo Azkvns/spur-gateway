@@ -5,3 +5,5 @@ __pycache__/
 site/
 .venv-docs/
 .DS_Store
+
+docs/superpowers/

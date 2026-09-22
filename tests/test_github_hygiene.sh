@@ -2,16 +2,26 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+tracked="$(git -C "$ROOT" ls-files -- docs/superpowers)"
+if [ -n "$tracked" ]; then
+  printf 'tracked docs/superpowers files:\n%s\n' "$tracked" >&2
+  exit 1
+fi
+
 python3 - \
   "$ROOT/.github/workflows/test.yml" \
   "$ROOT/.github/dependabot.yml" \
-  "$ROOT/README.md" <<'PY'
+  "$ROOT/README.md" \
+  "$ROOT/.gitignore" \
+  "$ROOT/mkdocs.yml" <<'PY'
 import pathlib
 import sys
 
 workflow = pathlib.Path(sys.argv[1])
 dependabot = pathlib.Path(sys.argv[2])
 readme = pathlib.Path(sys.argv[3])
+gitignore = pathlib.Path(sys.argv[4])
+mkdocs = pathlib.Path(sys.argv[5])
 
 lines = workflow.read_text().splitlines()
 perm = None
@@ -62,7 +72,17 @@ for needle in (
 ):
     if needle not in ci:
         sys.exit(f"README CI section missing {needle!r}")
+
+ignore_lines = gitignore.read_text().splitlines()
+if "docs/superpowers/" not in ignore_lines:
+    sys.exit("gitignore missing docs/superpowers/")
+
+mkdocs_text = mkdocs.read_text()
+if "exclude_docs:" not in mkdocs_text or "/superpowers/" not in mkdocs_text:
+    sys.exit("mkdocs.yml must exclude /superpowers/")
+
 print("ok test workflow permissions")
 print("ok dependabot config")
 print("ok readme ci policy")
+print("ok docs superpowers excluded")
 PY
