@@ -17,9 +17,11 @@ if [ -f "$ROOT/tests/test_render_config.py" ]; then
     python3 -m coverage run --source=docker -m unittest -v tests/test_render_config.py
     python3 -m coverage xml -o "$ROOT/coverage.xml"
     python3 -m unittest -v tests/test_panel_db.py
+    python3 -m unittest -v tests/test_panel_status.py
   else
     python3 -m unittest -v tests/test_render_config.py
     python3 -m unittest -v tests/test_panel_db.py
+    python3 -m unittest -v tests/test_panel_status.py
   fi
 else
   echo "==> skip python unittest (no tests/test_render_config.py yet)"
