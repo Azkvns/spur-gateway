@@ -1,0 +1,18 @@
+Third-party notices
+===================
+
+This project is licensed under the MIT License (see LICENSE).
+
+Distributions that ship container images or binaries may also include
+third-party components under other licenses:
+
+  - sing-box-extended
+    https://github.com/shtorm-7/sing-box-extended
+    License: GPL-3.0-or-later
+
+  - Debian packages used in the container base image
+    Licenses: various (many GPL); see /usr/share/doc/*/copyright
+    inside the published image.
+
+Where GPL obligations apply to distributed binaries, corresponding
+source will be made available as required by those licenses.
