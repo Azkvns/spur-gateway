@@ -1,9 +1,15 @@
 # Spur Gateway
 
 [![test](https://github.com/Azkvns/spur-gateway/actions/workflows/test.yml/badge.svg)](https://github.com/Azkvns/spur-gateway/actions/workflows/test.yml)
+[![release](https://github.com/Azkvns/spur-gateway/actions/workflows/release.yml/badge.svg)](https://github.com/Azkvns/spur-gateway/actions/workflows/release.yml)
+[![pages](https://github.com/Azkvns/spur-gateway/actions/workflows/pages.yml/badge.svg)](https://github.com/Azkvns/spur-gateway/actions/workflows/pages.yml)
 [![Maintainability](https://qlty.sh/gh/Azkvns/projects/spur-gateway/maintainability.svg)](https://qlty.sh/gh/Azkvns/projects/spur-gateway/metrics/code)
-[![license](https://img.shields.io/github/license/Azkvns/spur-gateway)](LICENSE)
+
+[![version](https://img.shields.io/github/v/release/Azkvns/spur-gateway)](https://github.com/Azkvns/spur-gateway/releases/latest)
+[![release date](https://img.shields.io/github/release-date/Azkvns/spur-gateway)](https://github.com/Azkvns/spur-gateway/releases/latest)
 [![GHCR](https://img.shields.io/badge/GHCR-spur--gateway-blue)](https://github.com/Azkvns/spur-gateway/pkgs/container/spur-gateway)
+[![platforms](https://img.shields.io/badge/platforms-linux%2Famd64%20%7C%20linux%2Farm64-blue)](https://github.com/Azkvns/spur-gateway/pkgs/container/spur-gateway)
+[![license](https://img.shields.io/github/license/Azkvns/spur-gateway)](LICENSE)
 [![docs](https://img.shields.io/badge/docs-GitHub%20Pages-brightgreen)](https://azkvns.github.io/spur-gateway/)
 
 Opt-in local **SOCKS5** and **HTTP CONNECT** gateway. Runs in Docker on [sing-box-extended](https://github.com/shtorm-7/sing-box-extended) and binds proxies to loopback only:
