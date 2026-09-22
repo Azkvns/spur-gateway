@@ -64,6 +64,14 @@ class PanelDbTests(unittest.TestCase):
         self.assertEqual(updated["created_at"], profile["created_at"])
         self.assertNotEqual(updated["updated_at"], profile["updated_at"])
 
+    def test_update_empty_fields_does_not_change_updated_at(self):
+        profile = db.create_profile(self.conn, "college", 1090, 8128, "note")
+        before = profile["updated_at"]
+        updated = db.update_profile(self.conn, profile["id"], {})
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated["updated_at"], before)
+        self.assertEqual(updated["note"], profile["note"])
+
     def test_update_unknown_profile_returns_none(self):
         self.assertIsNone(db.update_profile(self.conn, 999, {"note": "x"}))
 

@@ -100,7 +100,8 @@ def get_profile(conn: sqlite3.Connection, profile_id: int) -> dict[str, Any] | N
 def update_profile(
     conn: sqlite3.Connection, profile_id: int, fields: dict[str, Any]
 ) -> dict[str, Any] | None:
-    if get_profile(conn, profile_id) is None:
+    existing = get_profile(conn, profile_id)
+    if existing is None:
         return None
     sets: list[str] = []
     values: list[Any] = []
@@ -109,6 +110,8 @@ def update_profile(
             continue
         sets.append(f"{key} = ?")
         values.append(value)
+    if not sets:
+        return existing
     sets.append("updated_at = ?")
     values.append(_now())
     values.append(profile_id)
