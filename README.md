@@ -1,13 +1,16 @@
 # Spur Gateway
 
 [![test](https://github.com/Azkvns/spur-gateway/actions/workflows/test.yml/badge.svg)](https://github.com/Azkvns/spur-gateway/actions/workflows/test.yml)
+[![Maintainability](https://qlty.sh/gh/Azkvns/projects/spur-gateway/maintainability.svg)](https://qlty.sh/gh/Azkvns/projects/spur-gateway/metrics/code)
 [![license](https://img.shields.io/github/license/Azkvns/spur-gateway)](LICENSE)
 [![GHCR](https://img.shields.io/badge/GHCR-spur--gateway-blue)](https://github.com/Azkvns/spur-gateway/pkgs/container/spur-gateway)
 [![docs](https://img.shields.io/badge/docs-GitHub%20Pages-brightgreen)](https://azkvns.github.io/spur-gateway/)
 
-Opt-in local **SOCKS5** (`127.0.0.1:1090`) and **HTTP CONNECT** (`127.0.0.1:8128`) gateway on Docker + sing-box-extended.
+Opt-in local **SOCKS5** and **HTTP CONNECT** gateway on Docker + sing-box-extended.
 
-Host routes stay unchanged. Wrap individual commands with `spur`, or point a browser profile at the loopback proxy.
+Loopback only: `127.0.0.1:1090` (SOCKS5) · `127.0.0.1:8128` (HTTP CONNECT).
+
+Host routes stay unchanged. Wrap individual commands with `spur`, or point a browser profile at the proxy.
 
 ## Quick start
 
@@ -24,8 +27,8 @@ Or pull a released image: `ghcr.io/azkvns/spur-gateway:latest`.
 
 ## Documentation
 
-- English docs (GitHub Pages): https://azkvns.github.io/spur-gateway/
-- Russian overview: https://azkvns.github.io/spur-gateway/ru/
+- [English docs](https://azkvns.github.io/spur-gateway/)
+- [Русский обзор](https://azkvns.github.io/spur-gateway/ru/)
 - Source: [`docs/`](docs/)
 
 ## CI and releases
