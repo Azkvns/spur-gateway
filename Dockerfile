@@ -12,6 +12,7 @@ RUN apt-get update \
     && mv /tmp/sing-box-${SING_BOX_VERSION}-linux-${SING_BOX_ARCH}/sing-box /usr/local/bin/sing-box \
     && rm -rf /tmp/sb.tgz /tmp/sing-box-* /var/lib/apt/lists/*
 COPY docker/render_config.py /usr/local/lib/spur-gw/render_config.py
+COPY docker/render_lib/ /usr/local/lib/spur-gw/render_lib/
 COPY docker/clash.sh /usr/local/lib/spur-gw/clash.sh
 COPY docker/health.sh /usr/local/lib/spur-gw/health.sh
 COPY docker/watchdog.sh /usr/local/lib/spur-gw/watchdog.sh
