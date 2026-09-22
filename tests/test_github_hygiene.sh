@@ -14,7 +14,10 @@ python3 - \
   "$ROOT/README.md" \
   "$ROOT/.gitignore" \
   "$ROOT/mkdocs.yml" \
-  "$ROOT/tests/run.sh" <<'PY'
+  "$ROOT/tests/run.sh" \
+  "$ROOT/.github/workflows/release.yml" \
+  "$ROOT/.github/workflows/automerge.yml" \
+  "$ROOT/.github/scripts/dispatch_release.py" <<'PY'
 import pathlib
 import sys
 
@@ -24,6 +27,9 @@ readme = pathlib.Path(sys.argv[3])
 gitignore = pathlib.Path(sys.argv[4])
 mkdocs = pathlib.Path(sys.argv[5])
 run_sh = pathlib.Path(sys.argv[6])
+release = pathlib.Path(sys.argv[7])
+automerge = pathlib.Path(sys.argv[8])
+dispatch = pathlib.Path(sys.argv[9])
 
 lines = workflow.read_text().splitlines()
 perm = None
@@ -103,9 +109,38 @@ for needle in (
     if needle not in run_text:
         sys.exit(f"tests/run.sh missing {needle!r}")
 
+release_text = release.read_text()
+for needle in (
+    "workflow_dispatch:",
+    "group: release",
+    "cancel-in-progress: false",
+    "needs.version.outputs.release == 'true'",
+):
+    if needle not in release_text:
+        sys.exit(f"release.yml missing {needle!r}")
+
+automerge_text = automerge.read_text()
+for needle in (
+    "actions: write",
+    "dispatch_release.py",
+    "workflows: [test]",
+):
+    if needle not in automerge_text:
+        sys.exit(f"automerge.yml missing {needle!r}")
+
+dispatch_text = dispatch.read_text()
+for needle in (
+    "app/github-actions",
+    "[skip release]",
+    "release.yml",
+):
+    if needle not in dispatch_text:
+        sys.exit(f"dispatch_release.py missing {needle!r}")
+
 print("ok test workflow permissions")
 print("ok dependabot config")
 print("ok readme ci policy")
 print("ok docs superpowers excluded")
 print("ok qlty coverage")
+print("ok release dispatch")
 PY
