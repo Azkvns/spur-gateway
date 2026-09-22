@@ -2,12 +2,14 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-python3 - "$ROOT/.github/workflows/test.yml" <<'PY'
+python3 - "$ROOT/.github/workflows/test.yml" "$ROOT/.github/dependabot.yml" <<'PY'
 import pathlib
 import sys
 
-path = pathlib.Path(sys.argv[1])
-lines = path.read_text().splitlines()
+workflow = pathlib.Path(sys.argv[1])
+dependabot = pathlib.Path(sys.argv[2])
+
+lines = workflow.read_text().splitlines()
 perm = None
 for i, line in enumerate(lines):
     if line.startswith("permissions:"):
@@ -25,5 +27,21 @@ for line in lines[perm + 1 :]:
 got = [line for line in body if line.strip() and not line.strip().startswith("#")]
 if got != ["  contents: read"]:
     sys.exit(f"permissions must be exactly '  contents: read', got {got}")
+
+if not dependabot.is_file():
+    sys.exit(f"missing {dependabot}")
+text = dependabot.read_text()
+for needle in (
+    "version: 2",
+    "package-ecosystem: github-actions",
+    "package-ecosystem: pip",
+    "directory: /",
+    "interval: weekly",
+):
+    if needle not in text:
+        sys.exit(f"dependabot.yml missing {needle!r}")
+if text.count("interval: weekly") != 2:
+    sys.exit("dependabot.yml must schedule exactly two weekly updates")
 print("ok test workflow permissions")
+print("ok dependabot config")
 PY
