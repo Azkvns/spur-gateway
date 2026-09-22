@@ -1,0 +1,41 @@
+services:
+  gateway:
+    # Default arm64 for Apple Silicon. Override with SING_BOX_ARCH=amd64 on linux/amd64 hosts.
+    build:
+      context: .
+      args:
+        SING_BOX_ARCH: ${SING_BOX_ARCH:-arm64}
+    container_name: spur-gateway
+    # Optional: local `.env` still works; Portainer/Git stacks often have no file on disk.
+    env_file:
+      - path: .env
+        required: false
+    # Stack/UI env and compose interpolation must appear here — env_file alone is not enough for Portainer.
+    environment:
+      SPUR_SUB_URL: ${SPUR_SUB_URL:-}
+      SPUR_MOCK: ${SPUR_MOCK:-0}
+      SOCKS_PORT: ${SOCKS_PORT:-1090}
+      HTTP_PORT: ${HTTP_PORT:-8128}
+      SPUR_HEALTH_INTERVAL: ${SPUR_HEALTH_INTERVAL:-15}
+      SPUR_HEALTH_TIMEOUT: ${SPUR_HEALTH_TIMEOUT:-8}
+      SPUR_PROBE_PRIMARY: ${SPUR_PROBE_PRIMARY:-https://www.google.com}
+      SPUR_PROBE_SECONDARY: ${SPUR_PROBE_SECONDARY:-https://example.com}
+      SPUR_PROBE_FAILS: ${SPUR_PROBE_FAILS:-3}
+      SPUR_ROTATE_INTERVAL: ${SPUR_ROTATE_INTERVAL:-1800}
+      SPUR_UPGRADE_MIN_IMPROVE_MS: ${SPUR_UPGRADE_MIN_IMPROVE_MS:-80}
+      SPUR_UPGRADE_MIN_IMPROVE_RATIO: ${SPUR_UPGRADE_MIN_IMPROVE_RATIO:-0.3}
+      SPUR_RECONNECT_BACKOFF_MAX: ${SPUR_RECONNECT_BACKOFF_MAX:-60}
+      SPUR_SUB_REFRESH_INTERVAL: ${SPUR_SUB_REFRESH_INTERVAL:-86400}
+      SPUR_SUB_REFRESH_FAIL_COOLDOWN: ${SPUR_SUB_REFRESH_FAIL_COOLDOWN:-900}
+    ports:
+      - "127.0.0.1:1090:1090"
+      - "127.0.0.1:8128:8128"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 20s
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q 'state=ok' /run/spur-gw-health && ss -lnt 'sport = :1090' | grep -q ':1090'"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
