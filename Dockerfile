@@ -14,6 +14,7 @@ RUN apt-get update \
 COPY docker/render_config.py /usr/local/lib/spur-gw/render_config.py
 COPY docker/clash.sh /usr/local/lib/spur-gw/clash.sh
 COPY docker/health.sh /usr/local/lib/spur-gw/health.sh
+COPY docker/watchdog.sh /usr/local/lib/spur-gw/watchdog.sh
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 EXPOSE 1090 8128
