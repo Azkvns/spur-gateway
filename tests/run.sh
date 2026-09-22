@@ -13,7 +13,12 @@ else
 fi
 cd "$ROOT"
 if [ -f "$ROOT/tests/test_render_config.py" ]; then
-  python3 -m unittest -v tests/test_render_config.py
+  if python3 -c 'import coverage' >/dev/null 2>&1; then
+    python3 -m coverage run --source=docker -m unittest -v tests/test_render_config.py
+    python3 -m coverage xml -o "$ROOT/coverage.xml"
+  else
+    python3 -m unittest -v tests/test_render_config.py
+  fi
 else
   echo "==> skip python unittest (no tests/test_render_config.py yet)"
 fi

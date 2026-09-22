@@ -13,7 +13,8 @@ python3 - \
   "$ROOT/.github/dependabot.yml" \
   "$ROOT/README.md" \
   "$ROOT/.gitignore" \
-  "$ROOT/mkdocs.yml" <<'PY'
+  "$ROOT/mkdocs.yml" \
+  "$ROOT/tests/run.sh" <<'PY'
 import pathlib
 import sys
 
@@ -22,6 +23,7 @@ dependabot = pathlib.Path(sys.argv[2])
 readme = pathlib.Path(sys.argv[3])
 gitignore = pathlib.Path(sys.argv[4])
 mkdocs = pathlib.Path(sys.argv[5])
+run_sh = pathlib.Path(sys.argv[6])
 
 lines = workflow.read_text().splitlines()
 perm = None
@@ -39,8 +41,18 @@ for line in lines[perm + 1 :]:
         break
     body.append(line)
 got = [line for line in body if line.strip() and not line.strip().startswith("#")]
-if got != ["  contents: read"]:
-    sys.exit(f"permissions must be exactly '  contents: read', got {got}")
+if got != ["  contents: read", "  id-token: write"]:
+    sys.exit(f"permissions must be contents: read and id-token: write, got {got}")
+
+workflow_text = workflow.read_text()
+for needle in (
+    "qltysh/qlty-action/coverage@v2",
+    "oidc: true",
+    "files: coverage.xml",
+    "python3 -m pip install coverage",
+):
+    if needle not in workflow_text:
+        sys.exit(f"test.yml missing {needle!r}")
 
 if not dependabot.is_file():
     sys.exit(f"missing {dependabot}")
@@ -74,15 +86,26 @@ for needle in (
         sys.exit(f"README CI section missing {needle!r}")
 
 ignore_lines = gitignore.read_text().splitlines()
-if "docs/superpowers/" not in ignore_lines:
-    sys.exit("gitignore missing docs/superpowers/")
+for needle in ("docs/superpowers/", ".coverage", "coverage.xml"):
+    if needle not in ignore_lines:
+        sys.exit(f"gitignore missing {needle}")
 
 mkdocs_text = mkdocs.read_text()
 if "exclude_docs:" not in mkdocs_text or "/superpowers/" not in mkdocs_text:
     sys.exit("mkdocs.yml must exclude /superpowers/")
 
+run_text = run_sh.read_text()
+for needle in (
+    "coverage run --source=docker -m unittest -v tests/test_render_config.py",
+    'coverage xml -o "$ROOT/coverage.xml"',
+    "python3 -m unittest -v tests/test_render_config.py",
+):
+    if needle not in run_text:
+        sys.exit(f"tests/run.sh missing {needle!r}")
+
 print("ok test workflow permissions")
 print("ok dependabot config")
 print("ok readme ci policy")
 print("ok docs superpowers excluded")
+print("ok qlty coverage")
 PY

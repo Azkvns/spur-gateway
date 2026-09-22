@@ -7,11 +7,19 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install coverage
+        run: python3 -m pip install coverage
       - name: Run tests
         run: bash tests/run.sh
+      - name: Upload coverage
+        uses: qltysh/qlty-action/coverage@v2
+        with:
+          oidc: true
+          files: coverage.xml
