@@ -89,15 +89,26 @@ def _xhttp_transport(qs: dict[str, list[str]]) -> dict:
     return transport
 
 
+def _ws_transport(qs: dict[str, list[str]]) -> dict:
+    return _path_host("ws", qs, "headers")
+
+
+def _httpupgrade_transport(qs: dict[str, list[str]]) -> dict:
+    return _path_host("httpupgrade", qs, "host")
+
+
+_TRANSPORT_BUILDERS = {
+    "grpc": _grpc_transport,
+    "ws": _ws_transport,
+    "httpupgrade": _httpupgrade_transport,
+    "xhttp": _xhttp_transport,
+}
+
+
 def build_transport(transport_type: str, qs: dict[str, list[str]]) -> dict | None:
     if transport_type in {"", "tcp"}:
         return None
-    if transport_type == "grpc":
-        return _grpc_transport(qs)
-    if transport_type == "ws":
-        return _path_host("ws", qs, "headers")
-    if transport_type == "httpupgrade":
-        return _path_host("httpupgrade", qs, "host")
-    if transport_type == "xhttp":
-        return _xhttp_transport(qs)
-    return None
+    builder = _TRANSPORT_BUILDERS.get(transport_type)
+    if builder is None:
+        return None
+    return builder(qs)

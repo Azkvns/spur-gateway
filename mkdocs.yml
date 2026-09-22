@@ -4,6 +4,9 @@ repo_url: https://github.com/Azkvns/spur-gateway
 repo_name: Azkvns/spur-gateway
 edit_uri: ""
 
+exclude_docs: |
+  /superpowers/
+
 theme:
   name: material
   language: en
