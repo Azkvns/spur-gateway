@@ -4,12 +4,8 @@ __pycache__/
 *.pyc
 site/
 .venv-docs/
-.venv-panel/
 .DS_Store
-*.db
 
 docs/superpowers/
 .coverage
 coverage.xml
-
-.worktrees/
