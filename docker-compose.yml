@@ -1,10 +1,7 @@
 services:
   gateway:
-    # Default arm64 for Apple Silicon. Override with SING_BOX_ARCH=amd64 on linux/amd64 hosts.
     build:
       context: .
-      args:
-        SING_BOX_ARCH: ${SING_BOX_ARCH:-arm64}
     container_name: spur-gateway
     # Optional: local `.env` still works; Portainer/Git stacks often have no file on disk.
     env_file:

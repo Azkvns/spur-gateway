@@ -58,8 +58,30 @@ grep -q 'shtorm-7/sing-box-extended' "$DOCKERFILE" || {
   echo "FAIL: Dockerfile must download from shtorm-7/sing-box-extended" >&2
   exit 1
 }
+grep -q 'ARG TARGETARCH' "$DOCKERFILE" || {
+  echo "FAIL: Dockerfile must declare ARG TARGETARCH" >&2
+  exit 1
+}
+grep -q 'linux-${TARGETARCH}' "$DOCKERFILE" || {
+  echo "FAIL: Dockerfile must download sing-box for TARGETARCH" >&2
+  exit 1
+}
+if grep -q 'SING_BOX_ARCH' "$DOCKERFILE"; then
+  echo "FAIL: Dockerfile must not take SING_BOX_ARCH" >&2
+  exit 1
+fi
 
-# --- compose: no NET_ADMIN / tun, clash unpublished, arm64 build-arg ---
+RELEASE="$ROOT/.github/workflows/release.yml"
+if grep -q 'SING_BOX_ARCH' "$RELEASE"; then
+  echo "FAIL: release workflow must not pass SING_BOX_ARCH" >&2
+  exit 1
+fi
+grep -q 'platforms: linux/amd64,linux/arm64' "$RELEASE" || {
+  echo "FAIL: release workflow must publish linux/amd64 and linux/arm64" >&2
+  exit 1
+}
+
+# --- compose: no NET_ADMIN / tun, clash unpublished, no arch override ---
 if [ ! -f "$COMPOSE" ]; then
   echo "FAIL: docker-compose.yml not found" >&2
   exit 1
@@ -76,10 +98,10 @@ if grep -qE '9090' "$COMPOSE"; then
   echo "FAIL: docker-compose.yml must not publish Clash API on the host" >&2
   exit 1
 fi
-grep -qE 'SING_BOX_ARCH:[[:space:]]*\$\{SING_BOX_ARCH:-arm64\}' "$COMPOSE" || {
-  echo "FAIL: compose must pass SING_BOX_ARCH \${SING_BOX_ARCH:-arm64}" >&2
+if grep -q 'SING_BOX_ARCH' "$COMPOSE"; then
+  echo "FAIL: compose must not pass SING_BOX_ARCH" >&2
   exit 1
-}
+fi
 
 # --- fetch_and_render: sourceable, mock skips curl, live requires URL ---
 if [ ! -f "$ENTRYPOINT" ]; then
