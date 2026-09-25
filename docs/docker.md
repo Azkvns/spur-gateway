@@ -13,6 +13,8 @@ No `NET_ADMIN` and no TUN device.
 
 Image builds sing-box-extended `1.13.14-extended-2.5.0` from `shtorm-7`.
 
+Each image platform (`linux/amd64`, `linux/arm64`) installs the matching sing-box binary via BuildKit `TARGETARCH`.
+
 ## Prebuilt images
 
 ```bash

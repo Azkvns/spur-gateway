@@ -1,15 +1,16 @@
 FROM debian:bookworm-slim
 # sing-box-extended (shtorm-7) — stock SagerNet builds lack XHTTP transport.
+# TARGETARCH is per-platform (amd64 or arm64) and matches the release asset suffix.
+# Do not pass an arch build-arg: Buildx applies one value to every platform.
+ARG TARGETARCH
 ARG SING_BOX_VERSION=1.13.14-extended-2.5.0
-# Default amd64; compose overrides to arm64 for Apple Silicon. Set SING_BOX_ARCH=amd64 on linux/amd64 hosts.
-ARG SING_BOX_ARCH=amd64
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl python3 iproute2 procps \
     && curl -fsSL -o /tmp/sb.tgz \
-      "https://github.com/shtorm-7/sing-box-extended/releases/download/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${SING_BOX_ARCH}.tar.gz" \
+      "https://github.com/shtorm-7/sing-box-extended/releases/download/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${TARGETARCH}.tar.gz" \
     && tar -xzf /tmp/sb.tgz -C /tmp \
-    && mv /tmp/sing-box-${SING_BOX_VERSION}-linux-${SING_BOX_ARCH}/sing-box /usr/local/bin/sing-box \
+    && mv /tmp/sing-box-${SING_BOX_VERSION}-linux-${TARGETARCH}/sing-box /usr/local/bin/sing-box \
     && rm -rf /tmp/sb.tgz /tmp/sing-box-* /var/lib/apt/lists/*
 COPY docker/render_config.py /usr/local/lib/spur-gw/render_config.py
 COPY docker/render_lib/ /usr/local/lib/spur-gw/render_lib/

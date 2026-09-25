@@ -93,8 +93,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            SING_BOX_ARCH=amd64
 
   github_release:
     needs: [version, image]
