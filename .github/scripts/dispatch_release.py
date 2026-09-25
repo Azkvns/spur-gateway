@@ -26,8 +26,9 @@ def should_dispatch(merged_by: str, message: str) -> bool:
 
 
 def _gh(args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
-    print("+", " ".join(args), flush=True)
-    result = subprocess.run(args, check=False, text=True, capture_output=True)
+    command = ["gh", *args]
+    print("+", " ".join(command), flush=True)
+    result = subprocess.run(command, check=False, text=True, capture_output=True)
     if result.returncode != 0:
         if result.stderr:
             print(result.stderr, file=sys.stderr, end="" if result.stderr.endswith("\n") else "\n")
