@@ -26,7 +26,7 @@ jobs:
       part: ${{ steps.tag.outputs.part }}
       release: ${{ steps.record.outputs.release }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Release only untagged commits
@@ -65,7 +65,7 @@ jobs:
     if: needs.version.result == 'success' && needs.version.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -99,7 +99,7 @@ jobs:
     if: needs.version.result == 'success' && needs.version.outputs.release == 'true' && needs.image.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
