@@ -272,3 +272,39 @@ fetch_and_render() {
   fetch_calls=$((fetch_calls + 1))
   write_proxy_tags "$refresh_tags"
 }
+
+# Dropped tag: second refresh while still absent must not reload again.
+refresh_tags="de-1,us-1"
+write_proxy_tags "de-1,us-1"
+LAST_SUB_REFRESH=0
+restart_calls=0
+SPUR_CURRENT_SERVER="nl-1"
+maybe_refresh_sub
+assert_eq "$restart_calls" "0" "second drop refresh does not reload sing-box"
+
+# Empty current: reload when on-disk outbounds differ from loaded file identity.
+clash_current() { echo ""; }
+write_node_config nl-1 old.example
+LOADED_FILE_ID="$(_file_identity)"
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_node_config nl-1 new.example
+}
+LAST_SUB_REFRESH=0
+restart_calls=0
+check_calls=0
+fetch_calls=0
+maybe_refresh_sub
+assert_eq "$restart_calls" "1" "empty current reloads when file identity differs from loaded"
+LAST_SUB_REFRESH=0
+restart_calls=0
+check_calls=0
+fetch_calls=0
+maybe_refresh_sub
+assert_eq "$restart_calls" "0" "empty current skips reload when file matches loaded identity"
+
+clash_current() { echo "${SPUR_CURRENT_SERVER:-nl-1}"; }
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_proxy_tags "$refresh_tags"
+}

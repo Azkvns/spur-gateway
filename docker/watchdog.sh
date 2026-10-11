@@ -176,6 +176,37 @@ for ob in cfg.get("outbounds", []):
 ' "$tag" "$config" 2>/dev/null || true
 }
 
+_file_identity() {
+  local config="${SPUR_CONFIG_JSON:-/var/lib/spur/config.json}"
+  [ -f "$config" ] || return 0
+  python3 -c '
+import json, sys
+path = sys.argv[1]
+keys = ("server", "server_port", "uuid", "flow", "tls", "transport")
+cfg = json.load(open(path))
+parts = []
+for ob in cfg.get("outbounds", []):
+    if ob.get("type") == "selector":
+        continue
+    tag = ob.get("tag") or ""
+    ident = {k: ob[k] for k in keys if k in ob}
+    ident_json = json.dumps(ident, sort_keys=True, separators=(",", ":"))
+    parts.append(f"{tag}={ident_json}")
+print(",".join(sorted(parts)))
+' "$config" 2>/dev/null || true
+}
+
+_mark_loaded() {
+  local tag="${1:-}"
+  LOADED_TAG="$tag"
+  if [ -n "$tag" ]; then
+    LOADED_ID="$(_outbound_identity "$tag")"
+  else
+    LOADED_ID=""
+  fi
+  LOADED_FILE_ID="$(_file_identity)"
+}
+
 _selector_has_tag() {
   local tag="$1"
   [ -n "$tag" ] || return 1
@@ -219,15 +250,23 @@ maybe_refresh_sub() {
   fi
   fetch_and_render || return 0
   after_tags="$(_proxy_tag_set)"
+  local file_id
+  file_id="$(_file_identity)"
   if [ -z "$current" ]; then
-    if [ "$before_tags" = "$after_tags" ]; then
+    if [ -n "${LOADED_FILE_ID+x}" ] && [ "${LOADED_FILE_ID:-}" = "$file_id" ]; then
       return 0
     fi
   elif _selector_has_tag "$current"; then
     after_id="$(_outbound_identity "$current")"
-    if [ "$before_id" = "$after_id" ]; then
+    if [ -n "${LOADED_FILE_ID+x}" ] \
+      && [ "${LOADED_TAG:-}" = "$current" ] \
+      && [ "${LOADED_ID:-}" = "$after_id" ]; then
+      return 0
+    elif [ -z "${LOADED_FILE_ID+x}" ] && [ "$before_id" = "$after_id" ]; then
       return 0
     fi
+  elif ! echo "$before_tags" | grep -qxF -- "$current"; then
+    return 0
   fi
   check_singbox_config || return 0
   # SIGHUP if we have a tracked pid; otherwise full restart.
@@ -236,6 +275,7 @@ maybe_refresh_sub() {
   else
     restart_singbox
   fi
+  _mark_loaded "$current"
   if _selector_has_tag "$current"; then
     clash_switch "$current" || true
     SPUR_CURRENT_SERVER="$current"
@@ -453,6 +493,7 @@ watchdog_loop() {
   write_health reconnecting "bootstrapping"
   bootstrap_selector || true
   write_health ok
+  _mark_loaded "$(clash_current 2>/dev/null || true)"
   while [ "${STOPPING:-0}" != 1 ]; do
     if ! watchdog_tick; then
       _interruptible_sleep "$(backoff_seconds "$FAIL_ATTEMPT")"
