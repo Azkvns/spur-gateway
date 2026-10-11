@@ -29,10 +29,12 @@ health_ok=1
 SPUR_CURRENT_SERVER="nl-1"
 LAST_ROTATE_CHECK=0
 SPUR_ROTATE_INTERVAL=0
+CONN_COUNT=0
 
 tunnel_is_healthy() { [ "${health_ok:-1}" = 1 ]; }
 clash_current() { echo "${SPUR_CURRENT_SERVER:-nl-1}"; }
 clash_members() { printf '%s\n' "nl-1" "us-1"; }
+clash_connection_count() { echo "${CONN_COUNT:-0}"; }
 clash_switch() {
   switch_calls=$((switch_calls + 1))
   switch_to="$1"
@@ -84,6 +86,20 @@ maybe_timer_upgrade
 assert_eq "$switch_calls" "1" "timer switches when other is noticeably better"
 assert_eq "$switch_to" "us-1" "timer switches to the better member"
 assert_eq "$SPUR_CURRENT_SERVER" "us-1" "timer records the better member"
+
+# Active connections: defer rotate and keep the interval open.
+DELAY_NL=200 DELAY_US=100
+CONN_COUNT=2
+switch_calls=0
+SPUR_CURRENT_SERVER="nl-1"
+LAST_ROTATE_CHECK=0
+SPUR_ROTATE_INTERVAL=0
+tick_health_reset
+maybe_timer_upgrade
+assert_eq "$switch_calls" "0" "timer does not switch while connections exist"
+assert_eq "$SPUR_CURRENT_SERVER" "nl-1" "busy timer keeps the current server"
+assert_eq "$LAST_ROTATE_CHECK" "0" "busy timer does not consume the rotate interval"
+CONN_COUNT=0
 
 # Within rotate interval: skip delay probes and do not switch.
 DELAY_NL=200 DELAY_US=100

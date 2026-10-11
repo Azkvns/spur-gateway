@@ -114,12 +114,19 @@ maybe_timer_upgrade() {
   if [ $((now - LAST_ROTATE_CHECK)) -lt "$interval" ]; then
     return 0
   fi
-  LAST_ROTATE_CHECK="$now"
-
   # Failover owns an unhealthy current; the timer never tears it down.
   if ! tick_is_healthy; then
+    LAST_ROTATE_CHECK="$now"
     return 0
   fi
+  local count
+  if ! count="$(clash_connection_count)"; then
+    return 0
+  fi
+  if [ "$count" -gt 0 ]; then
+    return 0
+  fi
+  LAST_ROTATE_CHECK="$now"
 
   current="$(clash_current)"
   cur_ms="$(clash_delay "$current")"
