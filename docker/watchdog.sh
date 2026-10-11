@@ -152,13 +152,36 @@ for ob in cfg.get("outbounds", []):
 ' "$config" || true
 }
 
+_outbound_identity() {
+  local tag="$1"
+  local config="${SPUR_CONFIG_JSON:-/var/lib/spur/config.json}"
+  [ -n "$tag" ] && [ -f "$config" ] || return 0
+  python3 -c '
+import json, sys
+tag, path = sys.argv[1:]
+cfg = json.load(open(path))
+keys = ("server", "server_port", "uuid", "flow", "tls", "transport")
+for ob in cfg.get("outbounds", []):
+    if ob.get("tag") == tag and ob.get("type") != "selector":
+        ident = {k: ob[k] for k in keys if k in ob}
+        print(json.dumps(ident, sort_keys=True, separators=(",", ":")))
+        break
+' "$tag" "$config" 2>/dev/null || true
+}
+
+_selector_has_tag() {
+  local tag="$1"
+  [ -n "$tag" ] || return 1
+  _proxy_tag_set | grep -qxF -- "$tag"
+}
+
 check_singbox_config() {
   sing-box check -c "${SPUR_CONFIG_JSON:-/var/lib/spur/config.json}"
 }
 
 maybe_refresh_sub() {
   local force="${1:-0}"
-  local now interval before after current cooldown
+  local now interval before_tags after_tags current cooldown before_id after_id
   now="$(date +%s)"
   interval="${SPUR_SUB_REFRESH_INTERVAL:-86400}"
   cooldown="${SPUR_SUB_REFRESH_FAIL_COOLDOWN:-900}"
@@ -181,11 +204,23 @@ maybe_refresh_sub() {
     LAST_SUB_REFRESH="$now"
   fi
 
-  before="$(_proxy_tag_set)"
+  current="$(clash_current 2>/dev/null || true)"
+  before_tags="$(_proxy_tag_set)"
+  before_id=""
+  if [ -n "$current" ]; then
+    before_id="$(_outbound_identity "$current")"
+  fi
   fetch_and_render || return 0
-  after="$(_proxy_tag_set)"
-  if [ "$before" = "$after" ]; then
-    return 0
+  after_tags="$(_proxy_tag_set)"
+  if [ -z "$current" ]; then
+    if [ "$before_tags" = "$after_tags" ]; then
+      return 0
+    fi
+  elif _selector_has_tag "$current"; then
+    after_id="$(_outbound_identity "$current")"
+    if [ "$before_id" = "$after_id" ]; then
+      return 0
+    fi
   fi
   check_singbox_config || return 0
   # SIGHUP if we have a tracked pid; otherwise full restart.
@@ -194,8 +229,7 @@ maybe_refresh_sub() {
   else
     restart_singbox
   fi
-  current="$(clash_current)"
-  if printf '%s\n' "$after" | grep -qxF -- "$current"; then
+  if _selector_has_tag "$current"; then
     clash_switch "$current" || true
     SPUR_CURRENT_SERVER="$current"
   fi

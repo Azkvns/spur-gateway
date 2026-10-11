@@ -132,6 +132,18 @@ json.dump({"outbounds": [{"type": "selector", "tag": "proxy", "outbounds": tags}
 ' "$tags" "$SPUR_CONFIG_JSON"
 }
 
+write_node_config() {
+  local tag="$1" server="$2"
+  python3 -c '
+import json, sys
+tag, server, path = sys.argv[1:]
+json.dump({"outbounds": [
+  {"type": "selector", "tag": "proxy", "outbounds": [tag, "us-1"]},
+  {"type": "vless", "tag": tag, "server": server, "server_port": 443, "uuid": "u-1", "flow": "xtls-rprx-vision"},
+]}, open(path, "w"))
+' "$tag" "$server" "$SPUR_CONFIG_JSON"
+}
+
 restart_calls=0
 check_calls=0
 fetch_calls=0
@@ -174,10 +186,9 @@ switch_to=""
 SPUR_CURRENT_SERVER="nl-1"
 maybe_refresh_sub
 assert_eq "$fetch_calls" "1" "changed-tag refresh re-renders"
-assert_eq "$check_calls" "1" "changed-tag refresh runs sing-box check"
-assert_eq "$restart_calls" "1" "changed-tag refresh restarts sing-box"
-assert_eq "$switch_calls" "1" "changed-tag refresh keeps current tag still in pool"
-assert_eq "$switch_to" "nl-1" "kept tag is the previous current"
+assert_eq "$check_calls" "0" "sibling tag change skips sing-box check"
+assert_eq "$restart_calls" "0" "sibling tag change does not reload sing-box"
+assert_eq "$switch_calls" "0" "sibling tag change does not touch the selector"
 
 # Current tag dropped from pool: restart without forcing a stale switch.
 refresh_tags="de-1,us-1"
@@ -212,3 +223,36 @@ fetch_calls=0
 LAST_FORCE_SUB_REFRESH="$(date +%s)"
 maybe_refresh_sub 1
 assert_eq "$fetch_calls" "0" "forced refresh respects cooldown"
+
+# Selected server hostname changed: reload.
+write_node_config nl-1 old.example
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_node_config nl-1 new.example
+}
+LAST_SUB_REFRESH=0
+restart_calls=0
+check_calls=0
+fetch_calls=0
+SPUR_CURRENT_SERVER="nl-1"
+maybe_refresh_sub
+assert_eq "$check_calls" "1" "identity change runs sing-box check"
+assert_eq "$restart_calls" "1" "identity change reloads sing-box"
+
+# Same identity, extra sibling already covered above; explicit same-body refresh does not reload.
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_node_config nl-1 new.example
+}
+LAST_SUB_REFRESH=0
+restart_calls=0
+check_calls=0
+fetch_calls=0
+maybe_refresh_sub
+assert_eq "$restart_calls" "0" "unchanged identity does not reload"
+assert_eq "$check_calls" "0" "unchanged identity skips sing-box check"
+
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_proxy_tags "$refresh_tags"
+}
