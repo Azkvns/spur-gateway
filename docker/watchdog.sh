@@ -336,15 +336,23 @@ restart_singbox() {
 
 failover_now() {
   local reason="${1:-tunnel unhealthy}"
-  local next
-  # Prefer a Vision node with a real Clash delay when one exists.
+  local next old
+  if ! process_alive || ! ports_up; then
+    increment_fail_attempt
+    restart_singbox
+    write_health down "$reason"
+    return 1
+  fi
+  old="$(clash_current)"
   next="$(pick_fastest_server)"
-  if [ -z "$next" ] || [ "$next" = "$(clash_current)" ]; then
+  if [ -z "$next" ] || [ "$next" = "$old" ]; then
     next="$(pick_next_server)"
   fi
   clash_switch "$next" || true
   SPUR_CURRENT_SERVER="$next"
-  # The node changed, so the tick's verdict is stale: measure the new path once.
+  if [ -n "$old" ] && [ "$old" != "$next" ]; then
+    clash_close_tag "$old" || true
+  fi
   tick_health_reset
   if tick_is_healthy; then
     write_health ok
@@ -352,7 +360,6 @@ failover_now() {
     return 0
   fi
   increment_fail_attempt
-  restart_singbox
   write_health down "$reason"
   return 1
 }

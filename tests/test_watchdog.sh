@@ -148,6 +148,12 @@ restart_calls=0
 upgrade_calls=0
 refresh_calls=0
 health_ok=0
+close_calls=0
+close_tag=""
+clash_close_tag() {
+  close_calls=$((close_calls + 1))
+  close_tag="$1"
+}
 clash_switch() {
   switch_calls=$((switch_calls + 1))
   switch_to="$1"
@@ -158,6 +164,8 @@ assert_eq "$switch_calls" "1" "unhealthy tick switches once"
 assert_eq "$switch_to" "us-1" "unhealthy tick switches to next member"
 assert_eq "$SPUR_CURRENT_SERVER" "us-1" "failover sets SPUR_CURRENT_SERVER"
 assert_eq "$restart_calls" "0" "successful switch does not restart"
+assert_eq "$close_calls" "1" "successful failover closes the old tag"
+assert_eq "$close_tag" "nl-1" "successful failover closes the previous server"
 assert_eq "$upgrade_calls" "0" "unhealthy tick does not call maybe_timer_upgrade"
 if [ "$refresh_calls" -lt 1 ]; then
   echo "FAIL: unhealthy tick must refresh subscription (got refresh_calls=$refresh_calls)" >&2
@@ -173,12 +181,18 @@ before=$switch_calls
 watchdog_tick
 assert_eq "$switch_calls" "$before" "no failover while stopping"
 
-# After unsuccessful switch, health is not ok and restart_singbox runs.
+# After unsuccessful switch, health is not ok and a live sing-box stays up.
 STOPPING=0
 FAIL_ATTEMPT=0
 switch_calls=0
 restart_calls=0
 health_ok=0
+close_calls=0
+close_tag=""
+clash_close_tag() {
+  close_calls=$((close_calls + 1))
+  close_tag="$1"
+}
 clash_switch() {
   switch_calls=$((switch_calls + 1))
   switch_to="$1"
@@ -198,7 +212,24 @@ case "$probe_state" in
 esac
 assert_eq "$switch_calls" "1" "unsuccessful path still switches"
 assert_eq "$SPUR_CURRENT_SERVER" "us-1" "unsuccessful switch still records next server"
-assert_eq "$restart_calls" "1" "unsuccessful switch restarts sing-box"
+assert_eq "$restart_calls" "0" "unsuccessful switch keeps sing-box up"
+assert_eq "$close_calls" "1" "unsuccessful switch closes the old tag"
+assert_eq "$close_tag" "nl-1" "closed tag is the previous server"
+assert_eq "$FAIL_ATTEMPT" "1" "unsuccessful switch increments FAIL_ATTEMPT"
+
+# Live mode: dead process still restarts, without pretending the selector moved.
+FAIL_ATTEMPT=0
+switch_calls=0
+restart_calls=0
+close_calls=0
+process_ok=0
+ports_ok=1
+health_ok=0
+SPUR_CURRENT_SERVER="nl-1"
+watchdog_tick || true
+assert_eq "$restart_calls" "1" "dead process restarts sing-box"
+assert_eq "$close_calls" "0" "dead process does not close connections"
+process_ok=1
 
 # Mock mode renders a direct-only config without clash_api, so secondary probes
 # always fail: the tick must report ok and never touch sing-box or the selector.
@@ -316,6 +347,12 @@ tunnel_is_healthy() {
   probe_calls=$((probe_calls + 1))
   [ "$probe_healthy" = 1 ]
 }
+# Re-sourcing watchdog restores the real process and port checks.
+process_ok=1
+ports_ok=1
+process_alive() { [ "${process_ok:-1}" = 1 ]; }
+ports_up() { [ "${ports_ok:-1}" = 1 ]; }
+clash_close_tag() { :; }
 clash_current() { echo "${SPUR_CURRENT_SERVER:-nl-1}"; }
 clash_members() { printf '%s\n' "nl-1" "us-1"; }
 clash_delay() { echo 200; }
