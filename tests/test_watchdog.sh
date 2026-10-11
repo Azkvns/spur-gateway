@@ -353,6 +353,7 @@ ports_ok=1
 process_alive() { [ "${process_ok:-1}" = 1 ]; }
 ports_up() { [ "${ports_ok:-1}" = 1 ]; }
 clash_close_tag() { :; }
+clash_connection_count() { echo 0; }
 clash_current() { echo "${SPUR_CURRENT_SERVER:-nl-1}"; }
 clash_members() { printf '%s\n' "nl-1" "us-1"; }
 clash_delay() { echo 200; }
