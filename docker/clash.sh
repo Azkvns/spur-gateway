@@ -47,3 +47,38 @@ clash_delay() {
   }
   echo "${delay:-0}"
 }
+
+clash_connection_count() {
+  local base json
+  base="$(_clash_base)"
+  json="$(curl -fsS "http://${base}/connections")" || return 1
+  python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("connections") or []))' <<< "$json"
+}
+
+clash_close_tag() {
+  local tag="$1" base json cid encoded
+  [ -n "$tag" ] || return 0
+  [ "$tag" != "proxy" ] || return 0
+  base="$(_clash_base)"
+  json="$(curl -fsS "http://${base}/connections" 2>/dev/null)" || return 0
+  while IFS= read -r cid; do
+    [ -n "$cid" ] || continue
+    encoded="$(_clash_urlencode "$cid")"
+    curl -fsS -X DELETE "http://${base}/connections/${encoded}" >/dev/null 2>&1 || true
+  done <<EOF
+$(SPUR_CLOSE_TAG="$tag" python3 -c '
+import json, os, sys
+tag = os.environ["SPUR_CLOSE_TAG"]
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+for conn in data.get("connections") or []:
+    chains = conn.get("chains") or []
+    cid = conn.get("id") or ""
+    if cid and tag in chains:
+        print(cid)
+' <<< "$json")
+EOF
+  return 0
+}
