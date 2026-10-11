@@ -384,7 +384,7 @@ failover_now() {
     write_health down "$reason"
     return 1
   fi
-  old="$(clash_current)"
+  old="$(clash_current 2>/dev/null || true)"
   next="$(pick_fastest_server)"
   if [ -z "$next" ] || [ "$next" = "$old" ]; then
     next="$(pick_next_server)"

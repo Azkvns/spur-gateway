@@ -231,6 +231,28 @@ assert_eq "$restart_calls" "1" "dead process restarts sing-box"
 assert_eq "$close_calls" "0" "dead process does not close connections"
 process_ok=1
 
+# Live mode: Clash current lookup failure must not abort failover under set -e.
+FAIL_ATTEMPT=0
+switch_calls=0
+restart_calls=0
+close_calls=0
+health_ok=0
+process_ok=1
+ports_ok=1
+SPUR_MOCK=0
+SPUR_CURRENT_SERVER="nl-1"
+clash_current() { return 1; }
+clash_switch() {
+  switch_calls=$((switch_calls + 1))
+  switch_to="$1"
+  health_ok=1
+}
+watchdog_tick
+assert_eq "$switch_calls" "1" "failover survives clash_current failure"
+assert_eq "$restart_calls" "0" "clash_current failure keeps sing-box up"
+assert_eq "$close_calls" "0" "empty old tag skips clash_close_tag"
+clash_current() { echo "${SPUR_CURRENT_SERVER:-nl-1}"; }
+
 # Mock mode renders a direct-only config without clash_api, so secondary probes
 # always fail: the tick must report ok and never touch sing-box or the selector.
 STOPPING=0
