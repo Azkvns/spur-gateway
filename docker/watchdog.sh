@@ -114,12 +114,19 @@ maybe_timer_upgrade() {
   if [ $((now - LAST_ROTATE_CHECK)) -lt "$interval" ]; then
     return 0
   fi
-  LAST_ROTATE_CHECK="$now"
-
   # Failover owns an unhealthy current; the timer never tears it down.
   if ! tick_is_healthy; then
+    LAST_ROTATE_CHECK="$now"
     return 0
   fi
+  local count
+  if ! count="$(clash_connection_count)"; then
+    return 0
+  fi
+  if [ "$count" -gt 0 ]; then
+    return 0
+  fi
+  LAST_ROTATE_CHECK="$now"
 
   current="$(clash_current)"
   cur_ms="$(clash_delay "$current")"
@@ -152,13 +159,67 @@ for ob in cfg.get("outbounds", []):
 ' "$config" || true
 }
 
+_outbound_identity() {
+  local tag="$1"
+  local config="${SPUR_CONFIG_JSON:-/var/lib/spur/config.json}"
+  [ -n "$tag" ] && [ -f "$config" ] || return 0
+  python3 -c '
+import json, sys
+tag, path = sys.argv[1:]
+cfg = json.load(open(path))
+keys = ("server", "server_port", "uuid", "flow", "tls", "transport")
+for ob in cfg.get("outbounds", []):
+    if ob.get("tag") == tag and ob.get("type") != "selector":
+        ident = {k: ob[k] for k in keys if k in ob}
+        print(json.dumps(ident, sort_keys=True, separators=(",", ":")))
+        break
+' "$tag" "$config" 2>/dev/null || true
+}
+
+_file_identity() {
+  local config="${SPUR_CONFIG_JSON:-/var/lib/spur/config.json}"
+  [ -f "$config" ] || return 0
+  python3 -c '
+import json, sys
+path = sys.argv[1]
+keys = ("server", "server_port", "uuid", "flow", "tls", "transport")
+cfg = json.load(open(path))
+parts = []
+for ob in cfg.get("outbounds", []):
+    if ob.get("type") == "selector":
+        continue
+    tag = ob.get("tag") or ""
+    ident = {k: ob[k] for k in keys if k in ob}
+    ident_json = json.dumps(ident, sort_keys=True, separators=(",", ":"))
+    parts.append(f"{tag}={ident_json}")
+print(",".join(sorted(parts)))
+' "$config" 2>/dev/null || true
+}
+
+_mark_loaded() {
+  local tag="${1:-}"
+  LOADED_TAG="$tag"
+  if [ -n "$tag" ]; then
+    LOADED_ID="$(_outbound_identity "$tag")"
+  else
+    LOADED_ID=""
+  fi
+  LOADED_FILE_ID="$(_file_identity)"
+}
+
+_selector_has_tag() {
+  local tag="$1"
+  [ -n "$tag" ] || return 1
+  _proxy_tag_set | grep -qxF -- "$tag"
+}
+
 check_singbox_config() {
   sing-box check -c "${SPUR_CONFIG_JSON:-/var/lib/spur/config.json}"
 }
 
 maybe_refresh_sub() {
   local force="${1:-0}"
-  local now interval before after current cooldown
+  local now interval before_tags after_tags current cooldown before_id after_id
   now="$(date +%s)"
   interval="${SPUR_SUB_REFRESH_INTERVAL:-86400}"
   cooldown="${SPUR_SUB_REFRESH_FAIL_COOLDOWN:-900}"
@@ -181,10 +242,30 @@ maybe_refresh_sub() {
     LAST_SUB_REFRESH="$now"
   fi
 
-  before="$(_proxy_tag_set)"
+  current="$(clash_current 2>/dev/null || true)"
+  before_tags="$(_proxy_tag_set)"
+  before_id=""
+  if [ -n "$current" ]; then
+    before_id="$(_outbound_identity "$current")"
+  fi
   fetch_and_render || return 0
-  after="$(_proxy_tag_set)"
-  if [ "$before" = "$after" ]; then
+  after_tags="$(_proxy_tag_set)"
+  local file_id
+  file_id="$(_file_identity)"
+  if [ -z "$current" ]; then
+    if [ -n "${LOADED_FILE_ID+x}" ] && [ "${LOADED_FILE_ID:-}" = "$file_id" ]; then
+      return 0
+    fi
+  elif _selector_has_tag "$current"; then
+    after_id="$(_outbound_identity "$current")"
+    if [ -n "${LOADED_FILE_ID+x}" ] \
+      && [ "${LOADED_TAG:-}" = "$current" ] \
+      && [ "${LOADED_ID:-}" = "$after_id" ]; then
+      return 0
+    elif [ -z "${LOADED_FILE_ID+x}" ] && [ "$before_id" = "$after_id" ]; then
+      return 0
+    fi
+  elif ! echo "$before_tags" | grep -qxF -- "$current"; then
     return 0
   fi
   check_singbox_config || return 0
@@ -194,8 +275,8 @@ maybe_refresh_sub() {
   else
     restart_singbox
   fi
-  current="$(clash_current)"
-  if printf '%s\n' "$after" | grep -qxF -- "$current"; then
+  _mark_loaded "$current"
+  if _selector_has_tag "$current"; then
     clash_switch "$current" || true
     SPUR_CURRENT_SERVER="$current"
   fi
@@ -336,15 +417,23 @@ restart_singbox() {
 
 failover_now() {
   local reason="${1:-tunnel unhealthy}"
-  local next
-  # Prefer a Vision node with a real Clash delay when one exists.
+  local next old
+  if ! process_alive || ! ports_up; then
+    increment_fail_attempt
+    restart_singbox
+    write_health down "$reason"
+    return 1
+  fi
+  old="$(clash_current 2>/dev/null || true)"
   next="$(pick_fastest_server)"
-  if [ -z "$next" ] || [ "$next" = "$(clash_current)" ]; then
+  if [ -z "$next" ] || [ "$next" = "$old" ]; then
     next="$(pick_next_server)"
   fi
   clash_switch "$next" || true
   SPUR_CURRENT_SERVER="$next"
-  # The node changed, so the tick's verdict is stale: measure the new path once.
+  if [ -n "$old" ] && [ "$old" != "$next" ]; then
+    clash_close_tag "$old" || true
+  fi
   tick_health_reset
   if tick_is_healthy; then
     write_health ok
@@ -352,7 +441,6 @@ failover_now() {
     return 0
   fi
   increment_fail_attempt
-  restart_singbox
   write_health down "$reason"
   return 1
 }
@@ -405,6 +493,7 @@ watchdog_loop() {
   write_health reconnecting "bootstrapping"
   bootstrap_selector || true
   write_health ok
+  _mark_loaded "$(clash_current 2>/dev/null || true)"
   while [ "${STOPPING:-0}" != 1 ]; do
     if ! watchdog_tick; then
       _interruptible_sleep "$(backoff_seconds "$FAIL_ATTEMPT")"

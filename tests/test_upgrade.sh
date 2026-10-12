@@ -29,10 +29,12 @@ health_ok=1
 SPUR_CURRENT_SERVER="nl-1"
 LAST_ROTATE_CHECK=0
 SPUR_ROTATE_INTERVAL=0
+CONN_COUNT=0
 
 tunnel_is_healthy() { [ "${health_ok:-1}" = 1 ]; }
 clash_current() { echo "${SPUR_CURRENT_SERVER:-nl-1}"; }
 clash_members() { printf '%s\n' "nl-1" "us-1"; }
+clash_connection_count() { echo "${CONN_COUNT:-0}"; }
 clash_switch() {
   switch_calls=$((switch_calls + 1))
   switch_to="$1"
@@ -85,6 +87,20 @@ assert_eq "$switch_calls" "1" "timer switches when other is noticeably better"
 assert_eq "$switch_to" "us-1" "timer switches to the better member"
 assert_eq "$SPUR_CURRENT_SERVER" "us-1" "timer records the better member"
 
+# Active connections: defer rotate and keep the interval open.
+DELAY_NL=200 DELAY_US=100
+CONN_COUNT=2
+switch_calls=0
+SPUR_CURRENT_SERVER="nl-1"
+LAST_ROTATE_CHECK=0
+SPUR_ROTATE_INTERVAL=0
+tick_health_reset
+maybe_timer_upgrade
+assert_eq "$switch_calls" "0" "timer does not switch while connections exist"
+assert_eq "$SPUR_CURRENT_SERVER" "nl-1" "busy timer keeps the current server"
+assert_eq "$LAST_ROTATE_CHECK" "0" "busy timer does not consume the rotate interval"
+CONN_COUNT=0
+
 # Within rotate interval: skip delay probes and do not switch.
 DELAY_NL=200 DELAY_US=100
 switch_calls=0
@@ -132,6 +148,18 @@ json.dump({"outbounds": [{"type": "selector", "tag": "proxy", "outbounds": tags}
 ' "$tags" "$SPUR_CONFIG_JSON"
 }
 
+write_node_config() {
+  local tag="$1" server="$2"
+  python3 -c '
+import json, sys
+tag, server, path = sys.argv[1:]
+json.dump({"outbounds": [
+  {"type": "selector", "tag": "proxy", "outbounds": [tag, "us-1"]},
+  {"type": "vless", "tag": tag, "server": server, "server_port": 443, "uuid": "u-1", "flow": "xtls-rprx-vision"},
+]}, open(path, "w"))
+' "$tag" "$server" "$SPUR_CONFIG_JSON"
+}
+
 restart_calls=0
 check_calls=0
 fetch_calls=0
@@ -174,10 +202,9 @@ switch_to=""
 SPUR_CURRENT_SERVER="nl-1"
 maybe_refresh_sub
 assert_eq "$fetch_calls" "1" "changed-tag refresh re-renders"
-assert_eq "$check_calls" "1" "changed-tag refresh runs sing-box check"
-assert_eq "$restart_calls" "1" "changed-tag refresh restarts sing-box"
-assert_eq "$switch_calls" "1" "changed-tag refresh keeps current tag still in pool"
-assert_eq "$switch_to" "nl-1" "kept tag is the previous current"
+assert_eq "$check_calls" "0" "sibling tag change skips sing-box check"
+assert_eq "$restart_calls" "0" "sibling tag change does not reload sing-box"
+assert_eq "$switch_calls" "0" "sibling tag change does not touch the selector"
 
 # Current tag dropped from pool: restart without forcing a stale switch.
 refresh_tags="de-1,us-1"
@@ -212,3 +239,72 @@ fetch_calls=0
 LAST_FORCE_SUB_REFRESH="$(date +%s)"
 maybe_refresh_sub 1
 assert_eq "$fetch_calls" "0" "forced refresh respects cooldown"
+
+# Selected server hostname changed: reload.
+write_node_config nl-1 old.example
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_node_config nl-1 new.example
+}
+LAST_SUB_REFRESH=0
+restart_calls=0
+check_calls=0
+fetch_calls=0
+SPUR_CURRENT_SERVER="nl-1"
+maybe_refresh_sub
+assert_eq "$check_calls" "1" "identity change runs sing-box check"
+assert_eq "$restart_calls" "1" "identity change reloads sing-box"
+
+# Same identity, extra sibling already covered above; explicit same-body refresh does not reload.
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_node_config nl-1 new.example
+}
+LAST_SUB_REFRESH=0
+restart_calls=0
+check_calls=0
+fetch_calls=0
+maybe_refresh_sub
+assert_eq "$restart_calls" "0" "unchanged identity does not reload"
+assert_eq "$check_calls" "0" "unchanged identity skips sing-box check"
+
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_proxy_tags "$refresh_tags"
+}
+
+# Dropped tag: second refresh while still absent must not reload again.
+refresh_tags="de-1,us-1"
+write_proxy_tags "de-1,us-1"
+LAST_SUB_REFRESH=0
+restart_calls=0
+SPUR_CURRENT_SERVER="nl-1"
+maybe_refresh_sub
+assert_eq "$restart_calls" "0" "second drop refresh does not reload sing-box"
+
+# Empty current: reload when on-disk outbounds differ from loaded file identity.
+clash_current() { echo ""; }
+write_node_config nl-1 old.example
+LOADED_FILE_ID="$(_file_identity)"
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_node_config nl-1 new.example
+}
+LAST_SUB_REFRESH=0
+restart_calls=0
+check_calls=0
+fetch_calls=0
+maybe_refresh_sub
+assert_eq "$restart_calls" "1" "empty current reloads when file identity differs from loaded"
+LAST_SUB_REFRESH=0
+restart_calls=0
+check_calls=0
+fetch_calls=0
+maybe_refresh_sub
+assert_eq "$restart_calls" "0" "empty current skips reload when file matches loaded identity"
+
+clash_current() { echo "${SPUR_CURRENT_SERVER:-nl-1}"; }
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_proxy_tags "$refresh_tags"
+}
