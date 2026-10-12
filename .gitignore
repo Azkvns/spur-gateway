@@ -7,5 +7,6 @@ site/
 .DS_Store
 
 docs/superpowers/
+.worktrees
 .coverage
 coverage.xml

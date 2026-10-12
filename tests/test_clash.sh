@@ -54,6 +54,12 @@ case "$url" in
   */proxies/bad-node/delay*)
     exit 1
     ;;
+  */connections)
+    if [ "$method" = DELETE ]; then
+      exit 0
+    fi
+    echo '{"connections":[{"id":"c-old","chains":["nl-1","proxy"]},{"id":"c-new","chains":["us-1","proxy"]}]}'
+    ;;
   *)
     echo "unexpected url: $url" >&2
     exit 22
@@ -84,6 +90,20 @@ assert_eq "$DELAY" "142" "clash_delay returns delay ms from API"
 
 DELAY_FAIL="$(clash_delay bad-node)"
 assert_eq "$DELAY_FAIL" "0" "clash_delay returns 0 on curl error"
+
+COUNT="$(clash_connection_count)"
+assert_eq "$COUNT" "2" "clash_connection_count returns connections length"
+
+: > "$CURL_LOG"
+clash_close_tag nl-1
+grep -q 'method=DELETE url=http://127.0.0.1:9090/connections/c-old' "$CURL_LOG" || {
+  echo "FAIL: clash_close_tag must DELETE only the matching id (log: $(cat "$CURL_LOG"))" >&2
+  exit 1
+}
+if grep -q 'connections/c-new' "$CURL_LOG"; then
+  echo "FAIL: clash_close_tag closed a connection for another tag" >&2
+  exit 1
+fi
 
 export SPUR_CLASH_API="10.0.0.5:19090"
 : > "$CURL_LOG"
