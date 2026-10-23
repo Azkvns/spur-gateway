@@ -80,6 +80,19 @@ start_singbox() {
   SING_BOX_PID=$!
 }
 
+start_admin() {
+  if [ "${SPUR_ADMIN:-1}" = "0" ]; then
+    return 0
+  fi
+  local admin="${SPUR_ADMIN_PY:-$LIB_DIR/admin_server.py}"
+  if [ ! -f "$admin" ]; then
+    echo "admin server not found: $admin" >&2
+    return 0
+  fi
+  python3 "$admin" &
+  ADMIN_PID=$!
+}
+
 entrypoint_main() {
   mkdir -p /var/lib/spur /run
   fetch_and_render
@@ -93,10 +106,12 @@ entrypoint_main() {
     # shellcheck source=docker/watchdog.sh
     . "$watchdog"
     # bootstrap_selector + write_health ok run at the start of watchdog_loop
+    start_admin
     watchdog_loop
     return 0
   fi
   write_health ok
+  start_admin
   wait
 }
 

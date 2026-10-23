@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spur Gateway</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; line-height: 1.4; }
+  button, input { font: inherit; }
+  .row { margin: 0.35rem 0; }
+  .member { margin: 0.35rem 0; }
+  #result { min-height: 1.4em; }
+</style>
+</head>
+<body>
+<h1>Spur Gateway</h1>
+<div class="row" id="state">Состояние: </div>
+<div class="row" id="reason">Причина: </div>
+<div class="row" id="server">Сервер: </div>
+<div class="row" id="updated">Обновлено: </div>
+<div class="row" id="pin">Закрепление: </div>
+<p id="clash-note" hidden>Clash API недоступен</p>
+<p id="mock-note" hidden>Переключение недоступно в mock</p>
+<div id="members"></div>
+<p><button id="unpin" type="button">Снять закрепление</button></p>
+<form id="check-form">
+  <input id="url" type="text" size="48" placeholder="https://example.com" spellcheck="false">
+  <button type="submit">Проверить</button>
+</form>
+<p id="result"></p>
+<script>
+let busy = false;
+
+function applyBusy() {
+  document.querySelectorAll("button").forEach((button) => {
+    button.disabled = busy;
+  });
+}
+
+async function refresh() {
+  const response = await fetch("/api/status");
+  const data = await response.json();
+  document.getElementById("state").textContent = "Состояние: " + (data.state || "");
+  document.getElementById("reason").textContent = "Причина: " + (data.reason || "");
+  document.getElementById("server").textContent = "Сервер: " + (data.server || "");
+  document.getElementById("updated").textContent = "Обновлено: " + (data.updated || "");
+  document.getElementById("pin").textContent = data.pinned
+    ? "Закрепление: " + (data.pin || "да")
+    : "Закрепление: нет";
+  document.getElementById("clash-note").hidden = data.clash !== "unavailable";
+  document.getElementById("mock-note").hidden = !data.mock;
+  const box = document.getElementById("members");
+  box.replaceChildren();
+  if (!data.mock) {
+    for (const tag of data.members || []) {
+      const row = document.createElement("div");
+      row.className = "member";
+      row.append(document.createTextNode(tag + " "));
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "Переключить";
+      button.addEventListener("click", () => post("/api/switch", { name: tag }));
+      row.append(button);
+      box.append(row);
+    }
+  }
+  applyBusy();
+}
+
+async function post(path, payload) {
+  busy = true;
+  applyBusy();
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    await refresh();
+    return data;
+  } finally {
+    busy = false;
+    applyBusy();
+  }
+}
+
+document.getElementById("unpin").addEventListener("click", () => {
+  post("/api/unpin", {});
+});
+
+document.getElementById("check-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const data = await post("/api/check", { url: document.getElementById("url").value });
+  const error = data.error || "";
+  const code = data.http_code == null ? "" : data.http_code;
+  const seconds = data.seconds == null ? "" : data.seconds;
+  document.getElementById("result").textContent =
+    "Код: " + code + " Время: " + seconds + " Ошибка: " + error;
+});
+
+refresh();
+setInterval(() => {
+  if (!busy) refresh();
+}, 3000);
+</script>
+</body>
+</html>

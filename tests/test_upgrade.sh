@@ -48,6 +48,10 @@ clash_delay() {
   esac
 }
 
+pin_dir="$(mktemp -d)"
+export SPUR_PIN_FILE="$pin_dir/pin"
+trap 'rm -rf "$pin_dir"' EXIT
+
 # Other is worse (300ms > 200ms): no switch.
 DELAY_NL=200 DELAY_US=300
 switch_calls=0
@@ -86,6 +90,21 @@ maybe_timer_upgrade
 assert_eq "$switch_calls" "1" "timer switches when other is noticeably better"
 assert_eq "$switch_to" "us-1" "timer switches to the better member"
 assert_eq "$SPUR_CURRENT_SERVER" "us-1" "timer records the better member"
+
+printf '%s' "nl-1" > "$SPUR_PIN_FILE"
+switch_calls=0
+SPUR_CURRENT_SERVER="nl-1"
+LAST_ROTATE_CHECK=0
+SPUR_ROTATE_INTERVAL=0
+DELAY_NL=200 DELAY_US=100
+health_ok=1
+CONN_COUNT=0
+tick_health_reset
+maybe_timer_upgrade
+assert_eq "$switch_calls" "0" "timer does not switch while pin is set"
+assert_eq "$SPUR_CURRENT_SERVER" "nl-1" "pinned server stays current"
+assert_eq "$LAST_ROTATE_CHECK" "0" "pin does not consume the rotate interval"
+rm -f "$SPUR_PIN_FILE"
 
 # Active connections: defer rotate and keep the interval open.
 DELAY_NL=200 DELAY_US=100
@@ -137,7 +156,7 @@ assert_eq "$probe_calls" "1" "timer reuses the cached tick verdict"
 # --- subscription refresh ---
 cfg_dir="$(mktemp -d)"
 export SPUR_CONFIG_JSON="$cfg_dir/config.json"
-trap 'rm -rf "$cfg_dir"' EXIT
+trap 'rm -rf "$cfg_dir" "$pin_dir"' EXIT
 
 write_proxy_tags() {
   local tags="$1"

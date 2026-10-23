@@ -13,6 +13,10 @@ fi
 # shellcheck source=docker/watchdog.sh
 . "$WATCHDOG"
 
+pin_dir="$(mktemp -d)"
+export SPUR_PIN_FILE="$pin_dir/pin"
+trap 'rm -rf "$pin_dir"' EXIT
+
 SPUR_RECONNECT_BACKOFF_MAX=8
 assert_eq "$(backoff_seconds 1)" "1" "first backoff"
 assert_eq "$(backoff_seconds 2)" "2" "second backoff"
@@ -417,3 +421,83 @@ grep -q 'entrypoint.sh' "$ROOT/docker/watchdog.sh" || {
   echo "FAIL: watchdog.sh must document which functions entrypoint.sh provides" >&2
   exit 1
 }
+
+# Pin survives a dead process, blocks soft rotation, and drops when the tunnel is unhealthy.
+export SPUR_HEALTH_FILE="$pin_dir/health"
+process_alive() { return 0; }
+ports_up() { return 0; }
+clash_members() { printf '%s\n' "nl-1" "us-1"; }
+clash_current() { echo "nl-1"; }
+pick_fastest_server() { echo "us-1"; }
+switch_calls=0
+switch_to=""
+restart_calls=0
+clash_switch() {
+  switch_calls=$((switch_calls + 1))
+  switch_to="$1"
+  SPUR_CURRENT_SERVER="$1"
+}
+
+printf '%s' "nl-1" > "$SPUR_PIN_FILE"
+SPUR_CURRENT_SERVER="nl-1"
+switch_calls=0
+health_ok=0
+failover_now "tunnel unhealthy" || true
+[ ! -f "$SPUR_PIN_FILE" ] || { echo "FAIL: unhealthy failover must clear pin" >&2; exit 1; }
+assert_eq "$switch_to" "us-1" "unhealthy failover still switches"
+
+printf '%s' "nl-1" > "$SPUR_PIN_FILE"
+switch_calls=0
+process_alive() { return 1; }
+ports_up() { return 0; }
+restart_singbox() { restart_calls=$((restart_calls + 1)); }
+failover_now "sing-box unavailable" || true
+[ -f "$SPUR_PIN_FILE" ] || { echo "FAIL: dead process must keep pin" >&2; exit 1; }
+assert_eq "$switch_to" "nl-1" "dead process reapplies pin"
+
+printf '%s' "gone" > "$SPUR_PIN_FILE"
+refresh_pin
+[ ! -f "$SPUR_PIN_FILE" ] || { echo "FAIL: pin for a missing member must be cleared" >&2; exit 1; }
+
+printf '%s' "nl-1" > "$SPUR_PIN_FILE"
+clash_members() { return 1; }
+refresh_pin
+[ -f "$SPUR_PIN_FILE" ] || { echo "FAIL: refresh_pin must keep pin when Clash is unavailable" >&2; exit 1; }
+clash_members() { printf '%s\n' "nl-1" "us-1"; }
+
+printf '%s' "us-1" > "$SPUR_PIN_FILE"
+switch_calls=0
+switch_to=""
+pick_fastest_server() { echo "picked-fast"; }
+bootstrap_selector
+assert_eq "$switch_to" "us-1" "bootstrap reapplies pin"
+if [ "$switch_to" = "picked-fast" ]; then
+  echo "FAIL: bootstrap must not call pick_fastest_server while pin is set" >&2
+  exit 1
+fi
+
+# handle_stop must terminate the admin process and mark health down.
+# It calls exit, so it runs in its own shell.
+sleep 30 &
+admin_sleep_pid=$!
+stop_dir="$(mktemp -d)"
+stop_health="$stop_dir/health"
+bash -c '
+set -euo pipefail
+export SPUR_HEALTH_FILE="$1"
+export ADMIN_PID="$2"
+# shellcheck disable=SC1090
+. "$3"
+handle_stop
+' bash "$stop_health" "$admin_sleep_pid" "$WATCHDOG" || true
+if kill -0 "$admin_sleep_pid" 2>/dev/null; then
+  kill "$admin_sleep_pid" 2>/dev/null || true
+  wait "$admin_sleep_pid" 2>/dev/null || true
+  rm -rf "$stop_dir"
+  echo "FAIL: handle_stop must terminate ADMIN_PID" >&2
+  exit 1
+fi
+wait "$admin_sleep_pid" 2>/dev/null || true
+stop_state="$(grep -E '^state=' "$stop_health" | cut -d= -f2)"
+rm -rf "$stop_dir"
+assert_eq "$stop_state" "down" "handle_stop writes state=down"

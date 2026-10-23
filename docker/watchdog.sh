@@ -7,6 +7,44 @@ _WATCHDOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=docker/clash.sh
 . "$_WATCHDOG_DIR/clash.sh"
 
+read_pin() {
+  local file="${SPUR_PIN_FILE:-/run/spur-gw-pin}"
+  [ -f "$file" ] || return 0
+  tr -d '\r\n' < "$file"
+}
+
+clear_pin() {
+  rm -f -- "${SPUR_PIN_FILE:-/run/spur-gw-pin}"
+}
+
+refresh_pin() {
+  local pin members
+  pin="$(read_pin)"
+  [ -n "$pin" ] || return 0
+  if ! members="$(clash_members 2>/dev/null)"; then
+    return 0
+  fi
+  if printf '%s\n' "$members" | grep -qxF -- "$pin"; then
+    return 0
+  fi
+  clear_pin
+}
+
+reapply_pin() {
+  local pin members
+  pin="$(read_pin)"
+  [ -n "$pin" ] || return 0
+  if ! members="$(clash_members 2>/dev/null)"; then
+    return 0
+  fi
+  if printf '%s\n' "$members" | grep -qxF -- "$pin"; then
+    clash_switch "$pin" || true
+    SPUR_CURRENT_SERVER="$pin"
+    return 0
+  fi
+  clear_pin
+}
+
 backoff_seconds() {
   local attempt="$1" cap="${SPUR_RECONNECT_BACKOFF_MAX:-60}" delay=1 i
   # Signed 64-bit max / 2: the next delay*2 would overflow.
@@ -117,6 +155,10 @@ maybe_timer_upgrade() {
   # Failover owns an unhealthy current; the timer never tears it down.
   if ! tick_is_healthy; then
     LAST_ROTATE_CHECK="$now"
+    return 0
+  fi
+  # A live pin skips soft rotation and does not consume the interval.
+  if [ -n "$(read_pin)" ]; then
     return 0
   fi
   local count
@@ -374,6 +416,19 @@ bootstrap_selector() {
   if [ "${SPUR_MOCK:-0}" = "1" ]; then
     return 0
   fi
+  local pin members
+  pin="$(read_pin)"
+  if [ -n "$pin" ]; then
+    if ! members="$(clash_members 2>/dev/null)"; then
+      return 0
+    fi
+    if printf '%s\n' "$members" | grep -qxF -- "$pin"; then
+      clash_switch "$pin" || true
+      SPUR_CURRENT_SERVER="$pin"
+      return 0
+    fi
+    clear_pin
+  fi
   best="$(pick_fastest_server)" || return 0
   [ -n "$best" ] || return 0
   clash_switch "$best" || true
@@ -421,9 +476,11 @@ failover_now() {
   if ! process_alive || ! ports_up; then
     increment_fail_attempt
     restart_singbox
+    reapply_pin
     write_health down "$reason"
     return 1
   fi
+  clear_pin
   old="$(clash_current 2>/dev/null || true)"
   next="$(pick_fastest_server)"
   if [ -z "$next" ] || [ "$next" = "$old" ]; then
@@ -463,6 +520,7 @@ watchdog_tick() {
     write_health down "sing-box unavailable"
     return 1
   fi
+  refresh_pin
   tick_health_reset
   if tick_is_healthy; then
     FAIL_ATTEMPT=0
@@ -509,6 +567,10 @@ handle_stop() {
     kill "$SLEEP_PID" 2>/dev/null || true
     wait "$SLEEP_PID" 2>/dev/null || true
     unset SLEEP_PID
+  fi
+  if [ -n "${ADMIN_PID:-}" ]; then
+    kill "$ADMIN_PID" 2>/dev/null || true
+    wait "$ADMIN_PID" 2>/dev/null || true
   fi
   write_health down "stopped"
   exit 0

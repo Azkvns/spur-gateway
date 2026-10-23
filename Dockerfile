@@ -17,7 +17,9 @@ COPY docker/render_lib/ /usr/local/lib/spur-gw/render_lib/
 COPY docker/clash.sh /usr/local/lib/spur-gw/clash.sh
 COPY docker/health.sh /usr/local/lib/spur-gw/health.sh
 COPY docker/watchdog.sh /usr/local/lib/spur-gw/watchdog.sh
+COPY docker/admin_server.py /usr/local/lib/spur-gw/admin_server.py
+COPY docker/admin_page.html /usr/local/lib/spur-gw/admin_page.html
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
-EXPOSE 1090 8128
+EXPOSE 1090 8128 8787
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

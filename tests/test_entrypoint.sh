@@ -98,6 +98,22 @@ if grep -qE '9090' "$COMPOSE"; then
   echo "FAIL: docker-compose.yml must not publish Clash API on the host" >&2
   exit 1
 fi
+grep -q 'EXPOSE 1090 8128 8787' "$DOCKERFILE" || {
+  echo "FAIL: Dockerfile must EXPOSE 8787" >&2
+  exit 1
+}
+grep -q 'admin_server.py' "$DOCKERFILE" || {
+  echo "FAIL: Dockerfile must COPY admin_server.py" >&2
+  exit 1
+}
+grep -q 'admin_page.html' "$DOCKERFILE" || {
+  echo "FAIL: Dockerfile must COPY admin_page.html" >&2
+  exit 1
+}
+grep -q 'start_admin' "$ENTRYPOINT" || {
+  echo "FAIL: entrypoint must start the admin" >&2
+  exit 1
+}
 if grep -q 'SING_BOX_ARCH' "$COMPOSE"; then
   echo "FAIL: compose must not pass SING_BOX_ARCH" >&2
   exit 1
@@ -244,3 +260,31 @@ done
 assert_eq "$SING_BOX_PID" "$(cat "$SB_PIDFILE" 2>/dev/null || echo missing)" \
   "SING_BOX_PID is the backgrounded sing-box pid"
 wait "$SING_BOX_PID" 2>/dev/null || true
+
+# SPUR_ADMIN=0 skips the process; SPUR_ADMIN=1 records python args and ADMIN_PID.
+admin_log="$(mktemp)"
+admin_bin="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR" "$FAKEBIN" "$FAILBIN" "$SBBIN" "$HEALTHF" "$admin_bin" "$admin_log"' EXIT
+cat > "$admin_bin/python3" << EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$admin_log"
+exit 0
+EOF
+chmod +x "$admin_bin/python3"
+: > "$admin_log"
+SPUR_ADMIN=0 PATH="$admin_bin:$PATH" start_admin
+if [ -s "$admin_log" ]; then
+  echo "FAIL: SPUR_ADMIN=0 must not start the admin" >&2
+  exit 1
+fi
+unset ADMIN_PID
+SPUR_ADMIN=1 PATH="$admin_bin:$PATH" start_admin
+if [ -z "${ADMIN_PID:-}" ]; then
+  echo "FAIL: start_admin must set ADMIN_PID" >&2
+  exit 1
+fi
+wait "$ADMIN_PID" 2>/dev/null || true
+grep -q 'admin_server.py' "$admin_log" || {
+  echo "FAIL: start_admin must run admin_server.py (log: $(cat "$admin_log"))" >&2
+  exit 1
+}

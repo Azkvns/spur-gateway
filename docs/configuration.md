@@ -19,5 +19,7 @@ Copy `.env.example` to `.env` (`make env`) and set values as needed.
 | `SPUR_RECONNECT_BACKOFF_MAX` | `60` | Max reconnect backoff (seconds) |
 | `SPUR_SUB_REFRESH_INTERVAL` | `86400` | Periodic subscription refresh |
 | `SPUR_SUB_REFRESH_FAIL_COOLDOWN` | `900` | Cooldown after forced refresh |
+| `SPUR_ADMIN` | `1` | Set to `0` to disable the admin process |
+| `SPUR_ADMIN_PORT` | `8787` | Admin port inside the container and on the host loopback |
 
 Override the env file path with `SPUR_GW_ENV_FILE`.
