@@ -20,6 +20,10 @@ In live mode the watchdog:
 
 Mock mode only supervises the process and writes healthy status.
 
+## Admin
+
+The admin page is `http://127.0.0.1:8787`. Status is read from the health file and the Clash API. Switching a server writes `/run/spur-gw-pin`. Soft rotation does not move off that server. An unhealthy tunnel with sing-box still running clears the pin and switches servers. If the process itself dies, the pin is kept and applied again after restart. Unpin only deletes the pin file. A site check runs curl through SOCKS and shows the status code, time, and error. The subscription secret is not on the page.
+
 ## Third-party licenses
 
 See repository `NOTICE`. Runtime includes GPL-3.0+ sing-box-extended and Debian packages in the image.

@@ -18,6 +18,7 @@ Opt-in local **SOCKS5** and **HTTP CONNECT** gateway. Runs in Docker on [sing-bo
 |----------|---------|
 | SOCKS5 | `127.0.0.1:1090` |
 | HTTP CONNECT | `127.0.0.1:8128` |
+| Admin | `127.0.0.1:8787` |
 
 Host routing tables stay unchanged. Wrap individual commands with `spur`, or point a browser profile at the proxy.
 
@@ -26,6 +27,7 @@ Host routing tables stay unchanged. Wrap individual commands with `spur`, or poi
 - Loopback-only SOCKS5 and HTTP CONNECT (no system-wide VPN / TUN)
 - Per-command wrapper (`spur`) and optional browser proxy profile
 - Health probes and soft rotate via in-container watchdog
+- Loopback admin page for status, the current server, and a SOCKS URL check
 - Live VLESS subscription mode, or mock direct-only mode for local smoke tests
 - Multi-arch images on GHCR (`:vX.Y.Z`, `:latest`)
 

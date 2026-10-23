@@ -20,6 +20,15 @@ if ! grep -q '127.0.0.1:8128:8128' <<< "$content"; then
   exit 1
 fi
 
+if ! grep -q '127.0.0.1:${SPUR_ADMIN_PORT:-8787}:${SPUR_ADMIN_PORT:-8787}' <<< "$content"; then
+  echo "FAIL: docker-compose.yml must publish admin on loopback SPUR_ADMIN_PORT" >&2
+  exit 1
+fi
+if grep -qE '^\s*-\s*"8787:8787"' <<< "$content"; then
+  echo "FAIL: docker-compose.yml must not publish admin on all interfaces" >&2
+  exit 1
+fi
+
 if grep -qE '^\s*-\s*"1090:1090"' <<< "$content"; then
   echo "FAIL: docker-compose.yml must not expose SOCKS on all interfaces (bare 1090:1090)" >&2
   exit 1

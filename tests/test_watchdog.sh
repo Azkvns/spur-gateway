@@ -475,3 +475,29 @@ if [ "$switch_to" = "picked-fast" ]; then
   echo "FAIL: bootstrap must not call pick_fastest_server while pin is set" >&2
   exit 1
 fi
+
+# handle_stop must terminate the admin process and mark health down.
+# It calls exit, so it runs in its own shell.
+sleep 30 &
+admin_sleep_pid=$!
+stop_dir="$(mktemp -d)"
+stop_health="$stop_dir/health"
+bash -c '
+set -euo pipefail
+export SPUR_HEALTH_FILE="$1"
+export ADMIN_PID="$2"
+# shellcheck disable=SC1090
+. "$3"
+handle_stop
+' bash "$stop_health" "$admin_sleep_pid" "$WATCHDOG" || true
+if kill -0 "$admin_sleep_pid" 2>/dev/null; then
+  kill "$admin_sleep_pid" 2>/dev/null || true
+  wait "$admin_sleep_pid" 2>/dev/null || true
+  rm -rf "$stop_dir"
+  echo "FAIL: handle_stop must terminate ADMIN_PID" >&2
+  exit 1
+fi
+wait "$admin_sleep_pid" 2>/dev/null || true
+stop_state="$(grep -E '^state=' "$stop_health" | cut -d= -f2)"
+rm -rf "$stop_dir"
+assert_eq "$stop_state" "down" "handle_stop writes state=down"

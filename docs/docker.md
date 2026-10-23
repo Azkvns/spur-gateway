@@ -8,6 +8,7 @@ Published ports (loopback only):
 
 - `127.0.0.1:1090:1090`
 - `127.0.0.1:8128:8128`
+- `127.0.0.1:8787:8787`
 
 No `NET_ADMIN` and no TUN device.
 

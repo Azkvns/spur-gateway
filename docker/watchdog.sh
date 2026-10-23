@@ -568,6 +568,10 @@ handle_stop() {
     wait "$SLEEP_PID" 2>/dev/null || true
     unset SLEEP_PID
   fi
+  if [ -n "${ADMIN_PID:-}" ]; then
+    kill "$ADMIN_PID" 2>/dev/null || true
+    wait "$ADMIN_PID" 2>/dev/null || true
+  fi
   write_health down "stopped"
   exit 0
 }
