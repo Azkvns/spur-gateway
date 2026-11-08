@@ -19,6 +19,33 @@ read_lock() {
   tr -d '\r\n' < "$file"
 }
 
+auto_file_path() {
+  printf '%s\n' "${SPUR_AUTO_FILE:-/var/lib/spur/auto}"
+}
+
+auto_restricted() {
+  [ -f "$(auto_file_path)" ]
+}
+
+member_auto_allowed() {
+  local tag="$1"
+  [ -n "$tag" ] || return 1
+  if ! auto_restricted; then
+    return 0
+  fi
+  grep -qxF -- "$tag" "$(auto_file_path)"
+}
+
+filter_auto_tags() {
+  local tag
+  while IFS= read -r tag || [ -n "$tag" ]; do
+    [ -n "$tag" ] || continue
+    if member_auto_allowed "$tag"; then
+      printf '%s\n' "$tag"
+    fi
+  done
+}
+
 reapply_lock() {
   local lock members
   lock="$(read_lock)"
@@ -216,7 +243,7 @@ maybe_timer_upgrade() {
       return 0
     fi
   done <<EOF
-$(clash_members)
+$(filter_auto_tags <<< "$(clash_members)")
 EOF
 }
 
@@ -429,9 +456,9 @@ with ThreadPoolExecutor(max_workers=workers) as pool:
 pick_fastest_server() {
   local best="" best_ms=0 member ms line
   local candidates=""
-  candidates="$(_vision_tags)"
+  candidates="$(filter_auto_tags <<< "$(_vision_tags)")"
   if [ -z "$(printf '%s' "$candidates" | tr -d '[:space:]')" ]; then
-    candidates="$(clash_members)"
+    candidates="$(filter_auto_tags <<< "$(clash_members)")"
   fi
   while IFS= read -r line; do
     [ -n "$line" ] || continue
@@ -440,6 +467,9 @@ pick_fastest_server() {
     case "$ms" in
       ''|*[!0-9]*) continue ;;
     esac
+    if ! member_auto_allowed "$member"; then
+      continue
+    fi
     if [ -z "$best" ] || [ "$ms" -lt "$best_ms" ]; then
       best="$member"
       best_ms="$ms"
@@ -458,6 +488,9 @@ EOF
   done <<EOF
 $candidates
 EOF
+  if auto_restricted; then
+    return 0
+  fi
   clash_current
 }
 
@@ -505,11 +538,13 @@ pick_next_server() {
       seen=1
     fi
   done <<EOF
-$(clash_members)
+$(filter_auto_tags <<< "$(clash_members)")
 EOF
   if [ -n "$first" ]; then
     echo "$first"
-  else
+    return 0
+  fi
+  if ! auto_restricted; then
     echo "$current"
   fi
 }
@@ -539,6 +574,11 @@ failover_now() {
   next="$(pick_fastest_server)"
   if [ -z "$next" ] || [ "$next" = "$old" ]; then
     next="$(pick_next_server)"
+  fi
+  if [ -z "$next" ] || { auto_restricted && ! member_auto_allowed "$next"; }; then
+    increment_fail_attempt
+    write_health down "$reason"
+    return 1
   fi
   clash_switch "$next" || true
   SPUR_CURRENT_SERVER="$next"

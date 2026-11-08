@@ -16,6 +16,8 @@ fi
 pin_dir="$(mktemp -d)"
 export SPUR_PIN_FILE="$pin_dir/pin"
 export SPUR_LOCK_FILE="$pin_dir/lock"
+export SPUR_AUTO_FILE="$pin_dir/auto"
+rm -f "$SPUR_AUTO_FILE"
 trap 'rm -rf "$pin_dir"' EXIT
 
 SPUR_RECONNECT_BACKOFF_MAX=8
@@ -526,6 +528,40 @@ assert_eq "$switch_to" "us-1" "bootstrap prefers lock over pin and fastest"
   exit 1
 }
 rm -f "$SPUR_LOCK_FILE"
+
+# Lock coverage above replaces pick_fastest_server with a stub.
+eval "$(bash -c '. "$1"; declare -f pick_fastest_server' bash "$WATCHDOG")"
+
+rm -f "$SPUR_AUTO_FILE"
+assert_ok member_auto_allowed "us-1"
+printf '%s\n' "nl-1" > "$SPUR_AUTO_FILE"
+assert_ok member_auto_allowed "nl-1"
+assert_fail member_auto_allowed "us-1"
+: > "$SPUR_AUTO_FILE"
+assert_fail member_auto_allowed "nl-1"
+printf '%s\n' "de-1" > "$SPUR_AUTO_FILE"
+clash_members() { printf '%s\n' "nl-1" "us-1" "de-1"; }
+SPUR_CURRENT_SERVER="nl-1"
+assert_eq "$(pick_next_server)" "de-1" "pick_next skips a server outside the auto list"
+printf '%s\n' "us-1" > "$SPUR_AUTO_FILE"
+_vision_tags() { printf '%s\n' "nl-1" "us-1"; }
+_probe_delays() { printf '%s\n' "nl-1 10" "us-1 400"; }
+assert_eq "$(pick_fastest_server)" "us-1" "pick_fastest ignores a faster server outside the auto list"
+_vision_tags() { return 0; }
+_probe_delays() { return 0; }
+: > "$SPUR_AUTO_FILE"
+assert_eq "$(pick_fastest_server)" "" "empty auto list yields no failover target"
+assert_eq "$(pick_next_server)" "" "empty auto list yields no next server"
+switch_calls=0
+switch_to=""
+health_ok=0
+process_alive() { return 0; }
+ports_up() { return 0; }
+SPUR_CURRENT_SERVER="nl-1"
+failover_now "tunnel unhealthy" || true
+assert_eq "$switch_calls" "0" "empty auto list does not switch"
+rm -f "$SPUR_AUTO_FILE"
+clash_members() { printf '%s\n' "nl-1" "us-1"; }
 
 # handle_stop must terminate the admin process and mark health down.
 # It calls exit, so it runs in its own shell.

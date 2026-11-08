@@ -51,6 +51,8 @@ clash_delay() {
 pin_dir="$(mktemp -d)"
 export SPUR_PIN_FILE="$pin_dir/pin"
 export SPUR_LOCK_FILE="$pin_dir/lock"
+export SPUR_AUTO_FILE="$pin_dir/auto"
+rm -f "$SPUR_AUTO_FILE"
 trap 'rm -rf "$pin_dir"' EXIT
 
 # Other is worse (300ms > 200ms): no switch.
@@ -119,6 +121,47 @@ assert_eq "$switch_calls" "0" "timer does not switch while lock is set"
 assert_eq "$SPUR_CURRENT_SERVER" "nl-1" "locked server stays current"
 assert_eq "$LAST_ROTATE_CHECK" "0" "lock does not consume the rotate interval"
 rm -f "$SPUR_LOCK_FILE"
+
+clash_members() { printf '%s\n' "nl-1" "us-1" "de-1"; }
+clash_delay() {
+  case "$1" in
+    nl-1) echo "${DELAY_NL:-200}" ;;
+    us-1) echo "${DELAY_US:-300}" ;;
+    de-1) echo "${DELAY_DE:-300}" ;;
+    *) echo 0 ;;
+  esac
+}
+printf '%s\n' "nl-1" "de-1" > "$SPUR_AUTO_FILE"
+DELAY_NL=200 DELAY_US=50 DELAY_DE=180
+switch_calls=0
+switch_to=""
+SPUR_CURRENT_SERVER="nl-1"
+LAST_ROTATE_CHECK=0
+SPUR_ROTATE_INTERVAL=0
+health_ok=1
+CONN_COUNT=0
+tick_health_reset
+maybe_timer_upgrade
+assert_eq "$switch_calls" "0" "timer does not move to a faster server outside the auto list"
+assert_eq "$SPUR_CURRENT_SERVER" "nl-1" "current stays when the faster server is excluded"
+DELAY_DE=100
+switch_calls=0
+LAST_ROTATE_CHECK=0
+tick_health_reset
+maybe_timer_upgrade
+assert_eq "$switch_calls" "1" "timer still moves to an allowed faster server"
+assert_eq "$switch_to" "de-1" "timer target is the allowed server"
+rm -f "$SPUR_AUTO_FILE"
+clash_members() { printf '%s\n' "nl-1" "us-1"; }
+clash_delay() {
+  case "$1" in
+    nl-1) echo "${DELAY_NL:-200}" ;;
+    us-1) echo "${DELAY_US:-300}" ;;
+    *) echo 0 ;;
+  esac
+}
+SPUR_CURRENT_SERVER="nl-1"
+DELAY_NL=200 DELAY_US=300
 
 # Active connections: defer rotate and keep the interval open.
 DELAY_NL=200 DELAY_US=100
