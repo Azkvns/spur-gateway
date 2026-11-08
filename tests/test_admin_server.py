@@ -62,6 +62,7 @@ def make_app(module, tmp, clash, probe=None, mock=False):
     return module.AdminApp(
         health_path=Path(tmp) / "health",
         pin_path=Path(tmp) / "pin",
+        lock_path=Path(tmp) / "lock",
         socks_port=1090,
         timeout=8,
         clash=clash,
@@ -97,6 +98,8 @@ class AdminServerTests(unittest.TestCase):
         self.assertEqual(body["server"], "nl-1")
         self.assertEqual(body["members"], ["nl-1", "us-1"])
         self.assertFalse(body["pinned"])
+        self.assertFalse(body["locked"])
+        self.assertEqual(body["lock"], "")
         self.assertEqual(body["clash"], "ok")
 
     def test_status_when_clash_down(self):
@@ -135,6 +138,63 @@ class AdminServerTests(unittest.TestCase):
         self.assertEqual(code, 409)
         self.assertEqual(body["error"], "mock")
         self.assertEqual(self.clash.calls, [])
+
+    def test_lock_writes_file_and_switches(self):
+        code, body = self.app().lock("us-1")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["locked"], True)
+        self.assertEqual(body["lock"], "us-1")
+        self.assertEqual((Path(self.tmp.name) / "lock").read_text(encoding="utf-8"), "us-1")
+        self.assertEqual(self.clash.puts, ["us-1"])
+        self.assertFalse((Path(self.tmp.name) / "pin").exists())
+
+    def test_lock_unknown_does_not_write(self):
+        code, _body = self.app().lock("nope")
+        self.assertEqual(code, 400)
+        self.assertFalse((Path(self.tmp.name) / "lock").exists())
+
+    def test_lock_failure_keeps_previous_lock(self):
+        lock = Path(self.tmp.name) / "lock"
+        lock.write_text("nl-1", encoding="utf-8")
+        self.clash.fail_switch = True
+        code, _body = self.app().lock("us-1")
+        self.assertEqual(code, 502)
+        self.assertEqual(lock.read_text(encoding="utf-8"), "nl-1")
+
+    def test_status_keeps_lock_when_member_missing(self):
+        write_health(self.tmp.name)
+        Path(self.tmp.name, "lock").write_text("gone", encoding="utf-8")
+        body = self.app().status()
+        self.assertTrue(body["locked"])
+        self.assertEqual(body["lock"], "gone")
+        self.assertTrue((Path(self.tmp.name) / "lock").exists())
+
+    def test_unlock_removes_only_lock(self):
+        Path(self.tmp.name, "lock").write_text("nl-1", encoding="utf-8")
+        Path(self.tmp.name, "pin").write_text("nl-1", encoding="utf-8")
+        code, body = self.app().unlock()
+        self.assertEqual(code, 200)
+        self.assertFalse(body["locked"])
+        self.assertFalse((Path(self.tmp.name) / "lock").exists())
+        self.assertTrue((Path(self.tmp.name) / "pin").exists())
+
+    def test_switch_updates_existing_lock(self):
+        Path(self.tmp.name, "lock").write_text("nl-1", encoding="utf-8")
+        code, _body = self.app().switch("us-1")
+        self.assertEqual(code, 200)
+        self.assertEqual((Path(self.tmp.name) / "lock").read_text(encoding="utf-8"), "us-1")
+
+    def test_switch_failure_does_not_move_lock(self):
+        Path(self.tmp.name, "lock").write_text("nl-1", encoding="utf-8")
+        self.clash.fail_switch = True
+        code, _body = self.app().switch("us-1")
+        self.assertEqual(code, 502)
+        self.assertEqual((Path(self.tmp.name) / "lock").read_text(encoding="utf-8"), "nl-1")
+
+    def test_lock_mock_rejected(self):
+        code, body = self.app(mock=True).lock("us-1")
+        self.assertEqual(code, 409)
+        self.assertEqual(body["error"], "mock")
 
     def test_unpin_removes_file(self):
         pin = Path(self.tmp.name) / "pin"
@@ -250,6 +310,31 @@ class AdminServerTests(unittest.TestCase):
         self.assertIn("Проверить", text)
         self.assertIn("/api/status", text)
         self.assertIsNone(headers.get("Access-Control-Allow-Origin"))
+
+    def test_http_lock_and_unlock(self):
+        base = self._start(self.app())
+        code, _headers, raw = self._request(
+            base + "/api/lock",
+            data=json.dumps({"name": "us-1"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        self.assertEqual(code, 200)
+        body = json.loads(raw)
+        self.assertEqual(body["lock"], "us-1")
+        _code, _headers, raw = self._request(base + "/api/status")
+        status = json.loads(raw)
+        self.assertTrue(status["locked"])
+        code, _headers, raw = self._request(
+            base + "/api/unlock",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        self.assertEqual(code, 200)
+        body = json.loads(raw)
+        self.assertFalse(body["locked"])
+        self.assertFalse((Path(self.tmp.name) / "lock").exists())
 
 
 if __name__ == "__main__":

@@ -156,6 +156,9 @@ def read_pin(path: str | Path) -> str:
         return ""
 
 
+read_lock = read_pin
+
+
 def read_health(path: str | Path) -> dict:
     data = {key: "" for key in HEALTH_KEYS}
     try:
@@ -176,6 +179,7 @@ class AdminApp:
         self,
         health_path: str | Path,
         pin_path: str | Path,
+        lock_path: str | Path,
         socks_port: int,
         timeout: int,
         clash: ClashClient,
@@ -184,6 +188,7 @@ class AdminApp:
     ) -> None:
         self.health_path = health_path
         self.pin_path = pin_path
+        self.lock_path = lock_path
         self.socks_port = socks_port
         self.timeout = timeout
         self.clash = clash
@@ -193,6 +198,7 @@ class AdminApp:
     def status(self) -> dict:
         health = read_health(self.health_path)
         pin = read_pin(self.pin_path)
+        lock = read_lock(self.lock_path)
         body = {
             "state": health["state"],
             "reason": health["reason"],
@@ -200,6 +206,8 @@ class AdminApp:
             "updated": health["updated"],
             "pinned": bool(pin),
             "pin": pin,
+            "locked": bool(lock),
+            "lock": lock,
             "mock": self.mock,
             "members": [],
             "clash": "mock" if self.mock else "ok",
@@ -223,6 +231,8 @@ class AdminApp:
             pin = ""
         body["pinned"] = bool(pin)
         body["pin"] = pin
+        body["locked"] = bool(lock)
+        body["lock"] = lock
         return body
 
     def switch(self, name: object) -> tuple[int, dict]:
@@ -246,7 +256,35 @@ class AdminApp:
             except ClashError:
                 clear_pin(self.pin_path)
                 return 502, {"error": "clash"}
+        if read_lock(self.lock_path):
+            write_pin(self.lock_path, name)
         return 200, {"ok": True, "server": name, "pinned": True}
+
+    def lock(self, name: object) -> tuple[int, dict]:
+        if self.mock:
+            return 409, {"error": "mock"}
+        if not isinstance(name, str) or not name or "\n" in name or "\r" in name:
+            return 400, {"error": "invalid name"}
+        try:
+            group = self.clash.proxy_group()
+        except ClashError:
+            return 502, {"error": "clash"}
+        members = group.get("all") or []
+        if name not in members:
+            return 400, {"error": "unknown server"}
+        now = group.get("now") or ""
+        if name != now:
+            try:
+                self.clash.switch(name)
+                self.clash.close_tag(now)
+            except ClashError:
+                return 502, {"error": "clash"}
+        write_pin(self.lock_path, name)
+        return 200, {"ok": True, "server": name, "locked": True, "lock": name}
+
+    def unlock(self) -> tuple[int, dict]:
+        clear_pin(self.lock_path)
+        return 200, {"ok": True, "server": self._server(), "locked": False, "lock": ""}
 
     def unpin(self) -> tuple[int, dict]:
         clear_pin(self.pin_path)
@@ -330,7 +368,7 @@ def _handle_get(handler: BaseHTTPRequestHandler, app: AdminApp) -> None:
 
 def _handle_post(handler: BaseHTTPRequestHandler, app: AdminApp) -> None:
     path = urllib.parse.urlsplit(handler.path).path
-    if path not in ("/api/switch", "/api/unpin", "/api/check"):
+    if path not in ("/api/switch", "/api/unpin", "/api/lock", "/api/unlock", "/api/check"):
         _send_json(handler, 404, {"error": "not found"})
         return
     body = _read_json(handler)
@@ -340,6 +378,10 @@ def _handle_post(handler: BaseHTTPRequestHandler, app: AdminApp) -> None:
         code, payload = app.switch(body.get("name"))
     elif path == "/api/unpin":
         code, payload = app.unpin()
+    elif path == "/api/lock":
+        code, payload = app.lock(body.get("name"))
+    elif path == "/api/unlock":
+        code, payload = app.unlock()
     else:
         code, payload = app.check(body.get("url"))
     _send_json(handler, code, payload)
@@ -367,6 +409,7 @@ def main() -> None:
     app = AdminApp(
         health_path=os.environ.get("SPUR_HEALTH_FILE", "/run/spur-gw-health"),
         pin_path=os.environ.get("SPUR_PIN_FILE", "/run/spur-gw-pin"),
+        lock_path=os.environ.get("SPUR_LOCK_FILE", "/var/lib/spur/lock"),
         socks_port=socks_port,
         timeout=timeout,
         clash=ClashClient(os.environ.get("SPUR_CLASH_API", "127.0.0.1:9090")),

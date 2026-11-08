@@ -50,6 +50,7 @@ clash_delay() {
 
 pin_dir="$(mktemp -d)"
 export SPUR_PIN_FILE="$pin_dir/pin"
+export SPUR_LOCK_FILE="$pin_dir/lock"
 trap 'rm -rf "$pin_dir"' EXIT
 
 # Other is worse (300ms > 200ms): no switch.
@@ -105,6 +106,19 @@ assert_eq "$switch_calls" "0" "timer does not switch while pin is set"
 assert_eq "$SPUR_CURRENT_SERVER" "nl-1" "pinned server stays current"
 assert_eq "$LAST_ROTATE_CHECK" "0" "pin does not consume the rotate interval"
 rm -f "$SPUR_PIN_FILE"
+
+rm -f "$SPUR_PIN_FILE"
+printf '%s' "nl-1" > "$SPUR_LOCK_FILE"
+switch_calls=0
+SPUR_CURRENT_SERVER="nl-1"
+LAST_ROTATE_CHECK=0
+health_ok=1
+tick_health_reset
+maybe_timer_upgrade
+assert_eq "$switch_calls" "0" "timer does not switch while lock is set"
+assert_eq "$SPUR_CURRENT_SERVER" "nl-1" "locked server stays current"
+assert_eq "$LAST_ROTATE_CHECK" "0" "lock does not consume the rotate interval"
+rm -f "$SPUR_LOCK_FILE"
 
 # Active connections: defer rotate and keep the interval open.
 DELAY_NL=200 DELAY_US=100
@@ -327,3 +341,42 @@ fetch_and_render() {
   fetch_calls=$((fetch_calls + 1))
   write_proxy_tags "$refresh_tags"
 }
+
+printf '%s' "nl-1" > "$SPUR_LOCK_FILE"
+write_node_config nl-1 old.example
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_node_config nl-1 new.example
+}
+clash_current() { echo "us-1"; }
+SPUR_CURRENT_SERVER="us-1"
+LAST_SUB_REFRESH=0
+restart_calls=0
+switch_calls=0
+switch_to=""
+fetch_calls=0
+maybe_refresh_sub
+assert_eq "$restart_calls" "1" "locked identity change reloads sing-box"
+assert_eq "$switch_to" "nl-1" "reload restores the locked tag"
+rm -f "$SPUR_LOCK_FILE"
+clash_current() { echo "${SPUR_CURRENT_SERVER:-nl-1}"; }
+
+printf '%s' "nl-1" > "$SPUR_LOCK_FILE"
+refresh_tags="de-1,us-1"
+write_proxy_tags "nl-1,us-1"
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_proxy_tags "$refresh_tags"
+}
+SPUR_CURRENT_SERVER="nl-1"
+LAST_SUB_REFRESH=0
+restart_calls=0
+switch_calls=0
+switch_to=""
+maybe_refresh_sub
+assert_eq "$switch_calls" "0" "missing locked tag is not replaced on refresh"
+[ "$(tr -d '\r\n' < "$SPUR_LOCK_FILE")" = "nl-1" ] || {
+  echo "FAIL: refresh must keep lock when the tag leaves the pool" >&2
+  exit 1
+}
+rm -f "$SPUR_LOCK_FILE"

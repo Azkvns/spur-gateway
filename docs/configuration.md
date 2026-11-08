@@ -21,5 +21,6 @@ Copy `.env.example` to `.env` (`make env`) and set values as needed.
 | `SPUR_SUB_REFRESH_FAIL_COOLDOWN` | `900` | Cooldown after forced refresh |
 | `SPUR_ADMIN` | `1` | Set to `0` to disable the admin process |
 | `SPUR_ADMIN_PORT` | `8787` | Admin port inside the container and on the host loopback |
+| `SPUR_LOCK_FILE` | `/var/lib/spur/lock` | Durable server lock. Empty file means off. |
 
 Override the env file path with `SPUR_GW_ENV_FILE`.

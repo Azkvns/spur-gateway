@@ -19,10 +19,14 @@
 <div class="row" id="server">Сервер: </div>
 <div class="row" id="updated">Обновлено: </div>
 <div class="row" id="pin">Закрепление: </div>
+<div class="row" id="lock">Постоянное закрепление: </div>
 <p id="clash-note" hidden>Clash API недоступен</p>
 <p id="mock-note" hidden>Переключение недоступно в mock</p>
 <div id="members"></div>
-<p><button id="unpin" type="button">Снять закрепление</button></p>
+<p>
+  <button id="unpin" type="button">Снять закрепление</button>
+  <button id="unlock" type="button">Снять постоянное закрепление</button>
+</p>
 <form id="check-form">
   <input id="url" type="text" size="48" placeholder="https://example.com" spellcheck="false">
   <button type="submit">Проверить</button>
@@ -47,6 +51,9 @@ async function refresh() {
   document.getElementById("pin").textContent = data.pinned
     ? "Закрепление: " + (data.pin || "да")
     : "Закрепление: нет";
+  document.getElementById("lock").textContent = data.locked
+    ? "Постоянное закрепление: " + (data.lock || "да")
+    : "Постоянное закрепление: нет";
   document.getElementById("clash-note").hidden = data.clash !== "unavailable";
   document.getElementById("mock-note").hidden = !data.mock;
   const box = document.getElementById("members");
@@ -61,6 +68,12 @@ async function refresh() {
       button.textContent = "Переключить";
       button.addEventListener("click", () => post("/api/switch", { name: tag }));
       row.append(button);
+      const lockButton = document.createElement("button");
+      lockButton.type = "button";
+      lockButton.textContent = "Постоянно";
+      lockButton.addEventListener("click", () => post("/api/lock", { name: tag }));
+      row.append(document.createTextNode(" "));
+      row.append(lockButton);
       box.append(row);
     }
   }
@@ -87,6 +100,10 @@ async function post(path, payload) {
 
 document.getElementById("unpin").addEventListener("click", () => {
   post("/api/unpin", {});
+});
+
+document.getElementById("unlock").addEventListener("click", () => {
+  post("/api/unlock", {});
 });
 
 document.getElementById("check-form").addEventListener("submit", async (event) => {

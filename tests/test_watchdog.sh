@@ -15,6 +15,7 @@ fi
 
 pin_dir="$(mktemp -d)"
 export SPUR_PIN_FILE="$pin_dir/pin"
+export SPUR_LOCK_FILE="$pin_dir/lock"
 trap 'rm -rf "$pin_dir"' EXIT
 
 SPUR_RECONNECT_BACKOFF_MAX=8
@@ -475,6 +476,56 @@ if [ "$switch_to" = "picked-fast" ]; then
   echo "FAIL: bootstrap must not call pick_fastest_server while pin is set" >&2
   exit 1
 fi
+
+rm -f "$SPUR_LOCK_FILE"
+printf '%s' "nl-1" > "$SPUR_LOCK_FILE"
+switch_calls=0
+switch_to=""
+health_ok=0
+process_alive() { return 0; }
+ports_up() { return 0; }
+failover_locked "tunnel unhealthy" || true
+[ -f "$SPUR_LOCK_FILE" ] || { echo "FAIL: unhealthy lock must keep the lock file" >&2; exit 1; }
+assert_eq "$switch_calls" "1" "live unhealthy lock reapplies the locked tag"
+assert_eq "$switch_to" "nl-1" "live unhealthy lock does not leave the locked tag"
+[ -f "$SPUR_PIN_FILE" ] || true
+
+printf '%s' "nl-1" > "$SPUR_LOCK_FILE"
+switch_calls=0
+restart_calls=0
+process_alive() { return 1; }
+restart_singbox() { restart_calls=$((restart_calls + 1)); }
+failover_locked "sing-box unavailable" || true
+assert_eq "$restart_calls" "1" "dead process with lock restarts sing-box"
+assert_eq "$switch_to" "nl-1" "dead process with lock reapplies the locked tag"
+[ -f "$SPUR_LOCK_FILE" ] || { echo "FAIL: dead process must keep lock" >&2; exit 1; }
+
+printf '%s' "gone" > "$SPUR_LOCK_FILE"
+switch_calls=0
+switch_to=""
+process_alive() { return 0; }
+ports_up() { return 0; }
+pick_fastest_server() { echo "picked-fast"; }
+failover_locked "tunnel unhealthy" || true
+assert_eq "$switch_calls" "0" "missing lock tag is not replaced"
+assert_eq "$switch_to" "" "missing lock tag does not select another server"
+[ "$(tr -d '\r\n' < "$SPUR_LOCK_FILE")" = "gone" ] || {
+  echo "FAIL: missing member must keep lock file" >&2
+  exit 1
+}
+
+printf '%s' "us-1" > "$SPUR_LOCK_FILE"
+printf '%s' "nl-1" > "$SPUR_PIN_FILE"
+switch_calls=0
+switch_to=""
+pick_fastest_server() { echo "picked-fast"; }
+bootstrap_selector
+assert_eq "$switch_to" "us-1" "bootstrap prefers lock over pin and fastest"
+[ "$(tr -d '\r\n' < "$SPUR_LOCK_FILE")" = "us-1" ] || {
+  echo "FAIL: bootstrap must not clear lock" >&2
+  exit 1
+}
+rm -f "$SPUR_LOCK_FILE"
 
 # handle_stop must terminate the admin process and mark health down.
 # It calls exit, so it runs in its own shell.
