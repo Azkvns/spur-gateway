@@ -58,11 +58,12 @@ class FakeClash:
         self.closed.append(tag)
 
 
-def make_app(module, tmp, clash, probe=None, mock=False):
+def make_app(module, tmp, clash, probe=None, mock=False, auto_path=None):
     return module.AdminApp(
         health_path=Path(tmp) / "health",
         pin_path=Path(tmp) / "pin",
         lock_path=Path(tmp) / "lock",
+        auto_path=Path(tmp) / "auto" if auto_path is None else auto_path,
         socks_port=1090,
         timeout=8,
         clash=clash,
@@ -335,6 +336,68 @@ class AdminServerTests(unittest.TestCase):
         body = json.loads(raw)
         self.assertFalse(body["locked"])
         self.assertFalse((Path(self.tmp.name) / "lock").exists())
+
+    def test_status_auto_defaults_to_all_when_file_missing(self):
+        write_health(self.tmp.name)
+        body = self.app().status()
+        self.assertEqual(body["auto"], [])
+        self.assertTrue(body["auto_default"])
+
+    def test_set_auto_writes_only_known_members(self):
+        code, body = self.app().set_auto({"names": ["us-1", "us-1"]})
+        self.assertEqual(code, 200)
+        self.assertEqual(body["auto"], ["us-1"])
+        self.assertFalse(body["auto_default"])
+        self.assertEqual(
+            (Path(self.tmp.name) / "auto").read_text(encoding="utf-8"),
+            "us-1\n",
+        )
+        self.assertEqual(self.clash.puts, [])
+
+    def test_set_auto_unknown_does_not_write(self):
+        code, _body = self.app().set_auto({"names": ["nope"]})
+        self.assertEqual(code, 400)
+        self.assertFalse((Path(self.tmp.name) / "auto").exists())
+
+    def test_set_auto_empty_blocks_everyone(self):
+        code, body = self.app().set_auto({"names": []})
+        self.assertEqual(code, 200)
+        self.assertEqual(body["auto"], [])
+        self.assertFalse(body["auto_default"])
+        self.assertEqual((Path(self.tmp.name) / "auto").read_text(encoding="utf-8"), "")
+
+    def test_set_auto_default_removes_file(self):
+        path = Path(self.tmp.name) / "auto"
+        path.write_text("us-1\n", encoding="utf-8")
+        code, body = self.app().set_auto({"default": True})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["auto_default"])
+        self.assertFalse(path.exists())
+
+    def test_set_auto_mock_rejected(self):
+        code, body = self.app(mock=True).set_auto({"names": ["us-1"]})
+        self.assertEqual(code, 409)
+        self.assertEqual(body["error"], "mock")
+
+    def test_set_auto_rejects_newline(self):
+        code, _body = self.app().set_auto({"names": ["nl-1\ninjected"]})
+        self.assertEqual(code, 400)
+        self.assertFalse((Path(self.tmp.name) / "auto").exists())
+
+    def test_http_set_auto(self):
+        base = self._start(self.app())
+        code, _headers, raw = self._request(
+            base + "/api/auto",
+            data=json.dumps({"names": ["us-1"]}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        self.assertEqual(code, 200)
+        self.assertEqual(json.loads(raw)["auto"], ["us-1"])
+        _code, _headers, raw = self._request(base + "/api/status")
+        status = json.loads(raw)
+        self.assertEqual(status["auto"], ["us-1"])
+        self.assertFalse(status["auto_default"])
 
 
 if __name__ == "__main__":

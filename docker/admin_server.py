@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 HEALTH_KEYS = ("state", "reason", "server", "updated")
-MAX_BODY = 4096
+MAX_BODY = 65536
 
 
 class ClashError(Exception):
@@ -159,6 +159,27 @@ def read_pin(path: str | Path) -> str:
 read_lock = read_pin
 
 
+def read_auto(path: str | Path) -> tuple[list[str], bool]:
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return [], True
+    tags: list[str] = []
+    for line in text.splitlines():
+        tag = line.replace("\r", "")
+        if tag and tag not in tags:
+            tags.append(tag)
+    return tags, False
+
+
+def write_auto(path: str | Path, tags: list[str]) -> None:
+    dest = Path(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(dest.name + ".tmp")
+    tmp.write_text("".join(f"{tag}\n" for tag in tags), encoding="utf-8")
+    os.replace(tmp, dest)
+
+
 def read_health(path: str | Path) -> dict:
     data = {key: "" for key in HEALTH_KEYS}
     try:
@@ -180,6 +201,7 @@ class AdminApp:
         health_path: str | Path,
         pin_path: str | Path,
         lock_path: str | Path,
+        auto_path: str | Path,
         socks_port: int,
         timeout: int,
         clash: ClashClient,
@@ -189,6 +211,7 @@ class AdminApp:
         self.health_path = health_path
         self.pin_path = pin_path
         self.lock_path = lock_path
+        self.auto_path = auto_path
         self.socks_port = socks_port
         self.timeout = timeout
         self.clash = clash
@@ -199,6 +222,7 @@ class AdminApp:
         health = read_health(self.health_path)
         pin = read_pin(self.pin_path)
         lock = read_lock(self.lock_path)
+        auto, auto_default = read_auto(self.auto_path)
         body = {
             "state": health["state"],
             "reason": health["reason"],
@@ -208,6 +232,8 @@ class AdminApp:
             "pin": pin,
             "locked": bool(lock),
             "lock": lock,
+            "auto": auto,
+            "auto_default": auto_default,
             "mock": self.mock,
             "members": [],
             "clash": "mock" if self.mock else "ok",
@@ -281,6 +307,33 @@ class AdminApp:
                 return 502, {"error": "clash"}
         write_pin(self.lock_path, name)
         return 200, {"ok": True, "server": name, "locked": True, "lock": name}
+
+    def set_auto(self, body: object) -> tuple[int, dict]:
+        if self.mock:
+            return 409, {"error": "mock"}
+        if not isinstance(body, dict):
+            return 400, {"error": "json"}
+        if body.get("default") is True:
+            clear_pin(self.auto_path)
+            return 200, {"ok": True, "auto": [], "auto_default": True}
+        names = body.get("names")
+        if not isinstance(names, list):
+            return 400, {"error": "invalid names"}
+        try:
+            group = self.clash.proxy_group()
+        except ClashError:
+            return 502, {"error": "clash"}
+        members = group.get("all") or []
+        cleaned: list[str] = []
+        for name in names:
+            if not isinstance(name, str) or not name or "\n" in name or "\r" in name:
+                return 400, {"error": "invalid name"}
+            if name not in members:
+                return 400, {"error": "unknown server"}
+            if name not in cleaned:
+                cleaned.append(name)
+        write_auto(self.auto_path, cleaned)
+        return 200, {"ok": True, "auto": cleaned, "auto_default": False}
 
     def unlock(self) -> tuple[int, dict]:
         clear_pin(self.lock_path)
@@ -368,7 +421,7 @@ def _handle_get(handler: BaseHTTPRequestHandler, app: AdminApp) -> None:
 
 def _handle_post(handler: BaseHTTPRequestHandler, app: AdminApp) -> None:
     path = urllib.parse.urlsplit(handler.path).path
-    if path not in ("/api/switch", "/api/unpin", "/api/lock", "/api/unlock", "/api/check"):
+    if path not in ("/api/switch", "/api/unpin", "/api/lock", "/api/unlock", "/api/check", "/api/auto"):
         _send_json(handler, 404, {"error": "not found"})
         return
     body = _read_json(handler)
@@ -382,6 +435,8 @@ def _handle_post(handler: BaseHTTPRequestHandler, app: AdminApp) -> None:
         code, payload = app.lock(body.get("name"))
     elif path == "/api/unlock":
         code, payload = app.unlock()
+    elif path == "/api/auto":
+        code, payload = app.set_auto(body)
     else:
         code, payload = app.check(body.get("url"))
     _send_json(handler, code, payload)
@@ -410,6 +465,7 @@ def main() -> None:
         health_path=os.environ.get("SPUR_HEALTH_FILE", "/run/spur-gw-health"),
         pin_path=os.environ.get("SPUR_PIN_FILE", "/run/spur-gw-pin"),
         lock_path=os.environ.get("SPUR_LOCK_FILE", "/var/lib/spur/lock"),
+        auto_path=os.environ.get("SPUR_AUTO_FILE", "/var/lib/spur/auto"),
         socks_port=socks_port,
         timeout=timeout,
         clash=ClashClient(os.environ.get("SPUR_CLASH_API", "127.0.0.1:9090")),
