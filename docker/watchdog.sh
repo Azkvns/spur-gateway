@@ -13,6 +13,67 @@ read_pin() {
   tr -d '\r\n' < "$file"
 }
 
+read_lock() {
+  local file="${SPUR_LOCK_FILE:-/var/lib/spur/lock}"
+  [ -f "$file" ] || return 0
+  tr -d '\r\n' < "$file"
+}
+
+auto_file_path() {
+  printf '%s\n' "${SPUR_AUTO_FILE:-/var/lib/spur/auto}"
+}
+
+auto_restricted() {
+  [ -f "$(auto_file_path)" ]
+}
+
+member_auto_allowed() {
+  local tag="$1"
+  [ -n "$tag" ] || return 1
+  if ! auto_restricted; then
+    return 0
+  fi
+  grep -qxF -- "$tag" "$(auto_file_path)"
+}
+
+filter_auto_tags() {
+  local tag
+  while IFS= read -r tag || [ -n "$tag" ]; do
+    [ -n "$tag" ] || continue
+    if member_auto_allowed "$tag"; then
+      printf '%s\n' "$tag"
+    fi
+  done
+}
+
+reapply_lock() {
+  local lock members
+  lock="$(read_lock)"
+  [ -n "$lock" ] || return 0
+  if ! members="$(clash_members 2>/dev/null)"; then
+    return 0
+  fi
+  if printf '%s\n' "$members" | grep -qxF -- "$lock"; then
+    clash_switch "$lock" || true
+    SPUR_CURRENT_SERVER="$lock"
+  fi
+}
+
+failover_locked() {
+  local reason="${1:-tunnel unhealthy}"
+  if ! process_alive || ! ports_up; then
+    increment_fail_attempt
+    restart_singbox
+    reapply_lock
+    write_health down "$reason"
+    return 1
+  fi
+  reapply_lock
+  increment_fail_attempt
+  write_health down "$reason"
+  return 1
+}
+
 clear_pin() {
   rm -f -- "${SPUR_PIN_FILE:-/run/spur-gw-pin}"
 }
@@ -157,8 +218,8 @@ maybe_timer_upgrade() {
     LAST_ROTATE_CHECK="$now"
     return 0
   fi
-  # A live pin skips soft rotation and does not consume the interval.
-  if [ -n "$(read_pin)" ]; then
+  # A live lock or pin skips soft rotation and does not consume the interval.
+  if [ -n "$(read_lock)" ] || [ -n "$(read_pin)" ]; then
     return 0
   fi
   local count
@@ -182,7 +243,7 @@ maybe_timer_upgrade() {
       return 0
     fi
   done <<EOF
-$(clash_members)
+$(filter_auto_tags <<< "$(clash_members)")
 EOF
 }
 
@@ -261,7 +322,7 @@ check_singbox_config() {
 
 maybe_refresh_sub() {
   local force="${1:-0}"
-  local now interval before_tags after_tags current cooldown before_id after_id
+  local now interval before_tags after_tags current cooldown before_id after_id locked
   now="$(date +%s)"
   interval="${SPUR_SUB_REFRESH_INTERVAL:-86400}"
   cooldown="${SPUR_SUB_REFRESH_FAIL_COOLDOWN:-900}"
@@ -284,7 +345,12 @@ maybe_refresh_sub() {
     LAST_SUB_REFRESH="$now"
   fi
 
-  current="$(clash_current 2>/dev/null || true)"
+  locked="$(read_lock)"
+  if [ -n "$locked" ] && _selector_has_tag "$locked"; then
+    current="$locked"
+  else
+    current="$(clash_current 2>/dev/null || true)"
+  fi
   before_tags="$(_proxy_tag_set)"
   before_id=""
   if [ -n "$current" ]; then
@@ -316,6 +382,17 @@ maybe_refresh_sub() {
     :
   else
     restart_singbox
+  fi
+  locked="$(read_lock)"
+  if [ -n "$locked" ]; then
+    if _selector_has_tag "$locked"; then
+      clash_switch "$locked" || true
+      SPUR_CURRENT_SERVER="$locked"
+      _mark_loaded "$locked"
+    else
+      _mark_loaded ""
+    fi
+    return 0
   fi
   _mark_loaded "$current"
   if _selector_has_tag "$current"; then
@@ -379,9 +456,9 @@ with ThreadPoolExecutor(max_workers=workers) as pool:
 pick_fastest_server() {
   local best="" best_ms=0 member ms line
   local candidates=""
-  candidates="$(_vision_tags)"
+  candidates="$(filter_auto_tags <<< "$(_vision_tags)")"
   if [ -z "$(printf '%s' "$candidates" | tr -d '[:space:]')" ]; then
-    candidates="$(clash_members)"
+    candidates="$(filter_auto_tags <<< "$(clash_members)")"
   fi
   while IFS= read -r line; do
     [ -n "$line" ] || continue
@@ -390,6 +467,9 @@ pick_fastest_server() {
     case "$ms" in
       ''|*[!0-9]*) continue ;;
     esac
+    if ! member_auto_allowed "$member"; then
+      continue
+    fi
     if [ -z "$best" ] || [ "$ms" -lt "$best_ms" ]; then
       best="$member"
       best_ms="$ms"
@@ -408,12 +488,19 @@ EOF
   done <<EOF
 $candidates
 EOF
+  if auto_restricted; then
+    return 0
+  fi
   clash_current
 }
 
 bootstrap_selector() {
   local best
   if [ "${SPUR_MOCK:-0}" = "1" ]; then
+    return 0
+  fi
+  if [ -n "$(read_lock)" ]; then
+    reapply_lock
     return 0
   fi
   local pin members
@@ -451,11 +538,13 @@ pick_next_server() {
       seen=1
     fi
   done <<EOF
-$(clash_members)
+$(filter_auto_tags <<< "$(clash_members)")
 EOF
   if [ -n "$first" ]; then
     echo "$first"
-  else
+    return 0
+  fi
+  if ! auto_restricted; then
     echo "$current"
   fi
 }
@@ -485,6 +574,11 @@ failover_now() {
   next="$(pick_fastest_server)"
   if [ -z "$next" ] || [ "$next" = "$old" ]; then
     next="$(pick_next_server)"
+  fi
+  if [ -z "$next" ] || { auto_restricted && ! member_auto_allowed "$next"; }; then
+    increment_fail_attempt
+    write_health down "$reason"
+    return 1
   fi
   clash_switch "$next" || true
   SPUR_CURRENT_SERVER="$next"
@@ -521,6 +615,7 @@ watchdog_tick() {
     return 1
   fi
   refresh_pin
+  reapply_lock
   tick_health_reset
   if tick_is_healthy; then
     FAIL_ATTEMPT=0
@@ -533,6 +628,10 @@ watchdog_tick() {
   # Re-fetch subscription even while down: provider Reality params rotate often.
   maybe_refresh_sub || true
   maybe_refresh_sub 1 || true
+  if [ -n "$(read_lock)" ]; then
+    failover_locked "tunnel unhealthy"
+    return 1
+  fi
   failover_now "tunnel unhealthy"
 }
 

@@ -12,6 +12,8 @@ Published ports (loopback only):
 
 No `NET_ADMIN` and no TUN device.
 
+Named volume `spur-lib` is mounted at `/var/lib/spur` and keeps the durable server lock across container recreate. `config.json` in that directory is still rewritten on a successful subscription fetch.
+
 Image builds sing-box-extended `1.13.14-extended-2.5.0` from `shtorm-7`.
 
 Each image platform (`linux/amd64`, `linux/arm64`) installs the matching sing-box binary via BuildKit `TARGETARCH`.

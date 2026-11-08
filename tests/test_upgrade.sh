@@ -50,6 +50,9 @@ clash_delay() {
 
 pin_dir="$(mktemp -d)"
 export SPUR_PIN_FILE="$pin_dir/pin"
+export SPUR_LOCK_FILE="$pin_dir/lock"
+export SPUR_AUTO_FILE="$pin_dir/auto"
+rm -f "$SPUR_AUTO_FILE"
 trap 'rm -rf "$pin_dir"' EXIT
 
 # Other is worse (300ms > 200ms): no switch.
@@ -105,6 +108,60 @@ assert_eq "$switch_calls" "0" "timer does not switch while pin is set"
 assert_eq "$SPUR_CURRENT_SERVER" "nl-1" "pinned server stays current"
 assert_eq "$LAST_ROTATE_CHECK" "0" "pin does not consume the rotate interval"
 rm -f "$SPUR_PIN_FILE"
+
+rm -f "$SPUR_PIN_FILE"
+printf '%s' "nl-1" > "$SPUR_LOCK_FILE"
+switch_calls=0
+SPUR_CURRENT_SERVER="nl-1"
+LAST_ROTATE_CHECK=0
+health_ok=1
+tick_health_reset
+maybe_timer_upgrade
+assert_eq "$switch_calls" "0" "timer does not switch while lock is set"
+assert_eq "$SPUR_CURRENT_SERVER" "nl-1" "locked server stays current"
+assert_eq "$LAST_ROTATE_CHECK" "0" "lock does not consume the rotate interval"
+rm -f "$SPUR_LOCK_FILE"
+
+clash_members() { printf '%s\n' "nl-1" "us-1" "de-1"; }
+clash_delay() {
+  case "$1" in
+    nl-1) echo "${DELAY_NL:-200}" ;;
+    us-1) echo "${DELAY_US:-300}" ;;
+    de-1) echo "${DELAY_DE:-300}" ;;
+    *) echo 0 ;;
+  esac
+}
+printf '%s\n' "nl-1" "de-1" > "$SPUR_AUTO_FILE"
+DELAY_NL=200 DELAY_US=50 DELAY_DE=180
+switch_calls=0
+switch_to=""
+SPUR_CURRENT_SERVER="nl-1"
+LAST_ROTATE_CHECK=0
+SPUR_ROTATE_INTERVAL=0
+health_ok=1
+CONN_COUNT=0
+tick_health_reset
+maybe_timer_upgrade
+assert_eq "$switch_calls" "0" "timer does not move to a faster server outside the auto list"
+assert_eq "$SPUR_CURRENT_SERVER" "nl-1" "current stays when the faster server is excluded"
+DELAY_DE=100
+switch_calls=0
+LAST_ROTATE_CHECK=0
+tick_health_reset
+maybe_timer_upgrade
+assert_eq "$switch_calls" "1" "timer still moves to an allowed faster server"
+assert_eq "$switch_to" "de-1" "timer target is the allowed server"
+rm -f "$SPUR_AUTO_FILE"
+clash_members() { printf '%s\n' "nl-1" "us-1"; }
+clash_delay() {
+  case "$1" in
+    nl-1) echo "${DELAY_NL:-200}" ;;
+    us-1) echo "${DELAY_US:-300}" ;;
+    *) echo 0 ;;
+  esac
+}
+SPUR_CURRENT_SERVER="nl-1"
+DELAY_NL=200 DELAY_US=300
 
 # Active connections: defer rotate and keep the interval open.
 DELAY_NL=200 DELAY_US=100
@@ -327,3 +384,42 @@ fetch_and_render() {
   fetch_calls=$((fetch_calls + 1))
   write_proxy_tags "$refresh_tags"
 }
+
+printf '%s' "nl-1" > "$SPUR_LOCK_FILE"
+write_node_config nl-1 old.example
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_node_config nl-1 new.example
+}
+clash_current() { echo "us-1"; }
+SPUR_CURRENT_SERVER="us-1"
+LAST_SUB_REFRESH=0
+restart_calls=0
+switch_calls=0
+switch_to=""
+fetch_calls=0
+maybe_refresh_sub
+assert_eq "$restart_calls" "1" "locked identity change reloads sing-box"
+assert_eq "$switch_to" "nl-1" "reload restores the locked tag"
+rm -f "$SPUR_LOCK_FILE"
+clash_current() { echo "${SPUR_CURRENT_SERVER:-nl-1}"; }
+
+printf '%s' "nl-1" > "$SPUR_LOCK_FILE"
+refresh_tags="de-1,us-1"
+write_proxy_tags "nl-1,us-1"
+fetch_and_render() {
+  fetch_calls=$((fetch_calls + 1))
+  write_proxy_tags "$refresh_tags"
+}
+SPUR_CURRENT_SERVER="nl-1"
+LAST_SUB_REFRESH=0
+restart_calls=0
+switch_calls=0
+switch_to=""
+maybe_refresh_sub
+assert_eq "$switch_calls" "0" "missing locked tag is not replaced on refresh"
+[ "$(tr -d '\r\n' < "$SPUR_LOCK_FILE")" = "nl-1" ] || {
+  echo "FAIL: refresh must keep lock when the tag leaves the pool" >&2
+  exit 1
+}
+rm -f "$SPUR_LOCK_FILE"

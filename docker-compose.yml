@@ -26,10 +26,14 @@ services:
       SPUR_SUB_REFRESH_FAIL_COOLDOWN: ${SPUR_SUB_REFRESH_FAIL_COOLDOWN:-900}
       SPUR_ADMIN: ${SPUR_ADMIN:-1}
       SPUR_ADMIN_PORT: ${SPUR_ADMIN_PORT:-8787}
+      SPUR_LOCK_FILE: ${SPUR_LOCK_FILE:-/var/lib/spur/lock}
+      SPUR_AUTO_FILE: ${SPUR_AUTO_FILE:-/var/lib/spur/auto}
     ports:
       - "127.0.0.1:1090:1090"
       - "127.0.0.1:8128:8128"
       - "127.0.0.1:${SPUR_ADMIN_PORT:-8787}:${SPUR_ADMIN_PORT:-8787}"
+    volumes:
+      - spur-lib:/var/lib/spur
     init: true
     restart: unless-stopped
     stop_grace_period: 20s
@@ -39,3 +43,6 @@ services:
       timeout: 3s
       retries: 3
       start_period: 30s
+
+volumes:
+  spur-lib:

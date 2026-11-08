@@ -24,6 +24,10 @@ Mock mode only supervises the process and writes healthy status.
 
 The admin page is `http://127.0.0.1:8787`. Status is read from the health file and the Clash API. Switching a server writes `/run/spur-gw-pin`. Soft rotation does not move off that server. An unhealthy tunnel with sing-box still running clears the pin and switches servers. If the process itself dies, the pin is kept and applied again after restart. Unpin only deletes the pin file. A site check runs curl through SOCKS and shows the status code, time, and error. The subscription secret is not on the page.
 
+A durable lock is written to `/var/lib/spur/lock`. Soft rotation and failover to another server do not run. A dead sing-box is restarted, then the same tag is selected again. If the tag is missing from the subscription, the file stays, another server is not selected, and the tag is applied again when it returns. Clearing the durable lock deletes only the lock file. The session pin in `/run/spur-gw-pin` behaves as before.
+
+The «Авто» checkbox writes `/var/lib/spur/auto`. While that file is missing, failover, soft rotation, and the initial choice see every member. After it is written, only its lines are eligible; an empty file gives automatic switching no target. A server outside the list can still be chosen with «Переключить» and «Постоянно». While the lock is on, the list is not applied. «Авто: все, включая новые» deletes the file.
+
 ## Third-party licenses
 
 See repository `NOTICE`. Runtime includes GPL-3.0+ sing-box-extended and Debian packages in the image.

@@ -15,6 +15,9 @@ fi
 
 pin_dir="$(mktemp -d)"
 export SPUR_PIN_FILE="$pin_dir/pin"
+export SPUR_LOCK_FILE="$pin_dir/lock"
+export SPUR_AUTO_FILE="$pin_dir/auto"
+rm -f "$SPUR_AUTO_FILE"
 trap 'rm -rf "$pin_dir"' EXIT
 
 SPUR_RECONNECT_BACKOFF_MAX=8
@@ -475,6 +478,90 @@ if [ "$switch_to" = "picked-fast" ]; then
   echo "FAIL: bootstrap must not call pick_fastest_server while pin is set" >&2
   exit 1
 fi
+
+rm -f "$SPUR_LOCK_FILE"
+printf '%s' "nl-1" > "$SPUR_LOCK_FILE"
+switch_calls=0
+switch_to=""
+health_ok=0
+process_alive() { return 0; }
+ports_up() { return 0; }
+failover_locked "tunnel unhealthy" || true
+[ -f "$SPUR_LOCK_FILE" ] || { echo "FAIL: unhealthy lock must keep the lock file" >&2; exit 1; }
+assert_eq "$switch_calls" "1" "live unhealthy lock reapplies the locked tag"
+assert_eq "$switch_to" "nl-1" "live unhealthy lock does not leave the locked tag"
+[ -f "$SPUR_PIN_FILE" ] || true
+
+printf '%s' "nl-1" > "$SPUR_LOCK_FILE"
+switch_calls=0
+restart_calls=0
+process_alive() { return 1; }
+restart_singbox() { restart_calls=$((restart_calls + 1)); }
+failover_locked "sing-box unavailable" || true
+assert_eq "$restart_calls" "1" "dead process with lock restarts sing-box"
+assert_eq "$switch_to" "nl-1" "dead process with lock reapplies the locked tag"
+[ -f "$SPUR_LOCK_FILE" ] || { echo "FAIL: dead process must keep lock" >&2; exit 1; }
+
+printf '%s' "gone" > "$SPUR_LOCK_FILE"
+switch_calls=0
+switch_to=""
+process_alive() { return 0; }
+ports_up() { return 0; }
+pick_fastest_server() { echo "picked-fast"; }
+failover_locked "tunnel unhealthy" || true
+assert_eq "$switch_calls" "0" "missing lock tag is not replaced"
+assert_eq "$switch_to" "" "missing lock tag does not select another server"
+[ "$(tr -d '\r\n' < "$SPUR_LOCK_FILE")" = "gone" ] || {
+  echo "FAIL: missing member must keep lock file" >&2
+  exit 1
+}
+
+printf '%s' "us-1" > "$SPUR_LOCK_FILE"
+printf '%s' "nl-1" > "$SPUR_PIN_FILE"
+switch_calls=0
+switch_to=""
+pick_fastest_server() { echo "picked-fast"; }
+bootstrap_selector
+assert_eq "$switch_to" "us-1" "bootstrap prefers lock over pin and fastest"
+[ "$(tr -d '\r\n' < "$SPUR_LOCK_FILE")" = "us-1" ] || {
+  echo "FAIL: bootstrap must not clear lock" >&2
+  exit 1
+}
+rm -f "$SPUR_LOCK_FILE"
+
+# Lock coverage above replaces pick_fastest_server with a stub.
+eval "$(bash -c '. "$1"; declare -f pick_fastest_server' bash "$WATCHDOG")"
+
+rm -f "$SPUR_AUTO_FILE"
+assert_ok member_auto_allowed "us-1"
+printf '%s\n' "nl-1" > "$SPUR_AUTO_FILE"
+assert_ok member_auto_allowed "nl-1"
+assert_fail member_auto_allowed "us-1"
+: > "$SPUR_AUTO_FILE"
+assert_fail member_auto_allowed "nl-1"
+printf '%s\n' "de-1" > "$SPUR_AUTO_FILE"
+clash_members() { printf '%s\n' "nl-1" "us-1" "de-1"; }
+SPUR_CURRENT_SERVER="nl-1"
+assert_eq "$(pick_next_server)" "de-1" "pick_next skips a server outside the auto list"
+printf '%s\n' "us-1" > "$SPUR_AUTO_FILE"
+_vision_tags() { printf '%s\n' "nl-1" "us-1"; }
+_probe_delays() { printf '%s\n' "nl-1 10" "us-1 400"; }
+assert_eq "$(pick_fastest_server)" "us-1" "pick_fastest ignores a faster server outside the auto list"
+_vision_tags() { return 0; }
+_probe_delays() { return 0; }
+: > "$SPUR_AUTO_FILE"
+assert_eq "$(pick_fastest_server)" "" "empty auto list yields no failover target"
+assert_eq "$(pick_next_server)" "" "empty auto list yields no next server"
+switch_calls=0
+switch_to=""
+health_ok=0
+process_alive() { return 0; }
+ports_up() { return 0; }
+SPUR_CURRENT_SERVER="nl-1"
+failover_now "tunnel unhealthy" || true
+assert_eq "$switch_calls" "0" "empty auto list does not switch"
+rm -f "$SPUR_AUTO_FILE"
+clash_members() { printf '%s\n' "nl-1" "us-1"; }
 
 # handle_stop must terminate the admin process and mark health down.
 # It calls exit, so it runs in its own shell.

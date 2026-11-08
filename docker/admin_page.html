@@ -19,10 +19,18 @@
 <div class="row" id="server">Сервер: </div>
 <div class="row" id="updated">Обновлено: </div>
 <div class="row" id="pin">Закрепление: </div>
+<div class="row" id="lock">Постоянное закрепление: </div>
 <p id="clash-note" hidden>Clash API недоступен</p>
 <p id="mock-note" hidden>Переключение недоступно в mock</p>
 <div id="members"></div>
-<p><button id="unpin" type="button">Снять закрепление</button></p>
+<p>
+  <button id="unpin" type="button">Снять закрепление</button>
+  <button id="unlock" type="button">Снять постоянное закрепление</button>
+</p>
+<p>
+  <button id="auto-default" type="button" hidden>Авто: все, включая новые</button>
+</p>
+<p id="auto-note"></p>
 <form id="check-form">
   <input id="url" type="text" size="48" placeholder="https://example.com" spellcheck="false">
   <button type="submit">Проверить</button>
@@ -32,8 +40,8 @@
 let busy = false;
 
 function applyBusy() {
-  document.querySelectorAll("button").forEach((button) => {
-    button.disabled = busy;
+  document.querySelectorAll("button, input").forEach((control) => {
+    control.disabled = busy;
   });
 }
 
@@ -47,8 +55,12 @@ async function refresh() {
   document.getElementById("pin").textContent = data.pinned
     ? "Закрепление: " + (data.pin || "да")
     : "Закрепление: нет";
+  document.getElementById("lock").textContent = data.locked
+    ? "Постоянное закрепление: " + (data.lock || "да")
+    : "Постоянное закрепление: нет";
   document.getElementById("clash-note").hidden = data.clash !== "unavailable";
   document.getElementById("mock-note").hidden = !data.mock;
+  const autoOn = new Set(data.auto_default ? (data.members || []) : (data.auto || []));
   const box = document.getElementById("members");
   box.replaceChildren();
   if (!data.mock) {
@@ -61,9 +73,34 @@ async function refresh() {
       button.textContent = "Переключить";
       button.addEventListener("click", () => post("/api/switch", { name: tag }));
       row.append(button);
+      const lockButton = document.createElement("button");
+      lockButton.type = "button";
+      lockButton.textContent = "Постоянно";
+      lockButton.addEventListener("click", () => post("/api/lock", { name: tag }));
+      row.append(document.createTextNode(" "));
+      row.append(lockButton);
+      const autoLabel = document.createElement("label");
+      const autoBox = document.createElement("input");
+      autoBox.type = "checkbox";
+      autoBox.dataset.auto = tag;
+      autoBox.checked = autoOn.has(tag);
+      autoBox.addEventListener("change", () => {
+        const names = [];
+        document.querySelectorAll("#members input[data-auto]").forEach((input) => {
+          if (input.checked) names.push(input.dataset.auto);
+        });
+        post("/api/auto", { names });
+      });
+      autoLabel.append(autoBox, document.createTextNode(" Авто"));
+      row.append(document.createTextNode(" "));
+      row.append(autoLabel);
       box.append(row);
     }
   }
+  document.getElementById("auto-note").textContent = data.auto_default
+    ? "Автопереключение: все серверы, пока список не изменён."
+    : "Автопереключение только на отмеченные. Неотмеченные и новые серверы сами не выбираются.";
+  document.getElementById("auto-default").hidden = !!data.auto_default || !!data.mock;
   applyBusy();
 }
 
@@ -87,6 +124,14 @@ async function post(path, payload) {
 
 document.getElementById("unpin").addEventListener("click", () => {
   post("/api/unpin", {});
+});
+
+document.getElementById("unlock").addEventListener("click", () => {
+  post("/api/unlock", {});
+});
+
+document.getElementById("auto-default").addEventListener("click", () => {
+  post("/api/auto", { default: true });
 });
 
 document.getElementById("check-form").addEventListener("submit", async (event) => {
