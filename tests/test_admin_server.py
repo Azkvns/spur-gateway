@@ -310,6 +310,8 @@ class AdminServerTests(unittest.TestCase):
         text = body.decode()
         self.assertIn("Проверить", text)
         self.assertIn("/api/status", text)
+        self.assertIn("Авто", text)
+        self.assertIn("/api/auto", text)
         self.assertIsNone(headers.get("Access-Control-Allow-Origin"))
 
     def test_http_lock_and_unlock(self):

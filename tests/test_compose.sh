@@ -72,6 +72,10 @@ if ! grep -qE 'SPUR_LOCK_FILE:[[:space:]]*\$\{SPUR_LOCK_FILE:-/var/lib/spur/lock
   echo "FAIL: compose must pass SPUR_LOCK_FILE into the container" >&2
   exit 1
 fi
+if ! grep -qE 'SPUR_AUTO_FILE:[[:space:]]*\$\{SPUR_AUTO_FILE:-/var/lib/spur/auto\}' <<< "$content"; then
+  echo "FAIL: compose must pass SPUR_AUTO_FILE into the container" >&2
+  exit 1
+fi
 if ! grep -qE '^[[:space:]]*spur-lib:' <<< "$content"; then
   echo "FAIL: compose must declare the spur-lib volume" >&2
   exit 1

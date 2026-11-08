@@ -27,6 +27,7 @@ services:
       SPUR_ADMIN: ${SPUR_ADMIN:-1}
       SPUR_ADMIN_PORT: ${SPUR_ADMIN_PORT:-8787}
       SPUR_LOCK_FILE: ${SPUR_LOCK_FILE:-/var/lib/spur/lock}
+      SPUR_AUTO_FILE: ${SPUR_AUTO_FILE:-/var/lib/spur/auto}
     ports:
       - "127.0.0.1:1090:1090"
       - "127.0.0.1:8128:8128"

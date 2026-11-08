@@ -22,5 +22,6 @@ Copy `.env.example` to `.env` (`make env`) and set values as needed.
 | `SPUR_ADMIN` | `1` | Set to `0` to disable the admin process |
 | `SPUR_ADMIN_PORT` | `8787` | Admin port inside the container and on the host loopback |
 | `SPUR_LOCK_FILE` | `/var/lib/spur/lock` | Durable server lock. Empty file means off. |
+| `SPUR_AUTO_FILE` | `/var/lib/spur/auto` | Allowlist for automatic failover and soft rotation. Missing file means every member. |
 
 Override the env file path with `SPUR_GW_ENV_FILE`.
