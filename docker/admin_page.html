@@ -3,108 +3,411 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Spur Gateway</title>
+<title>Spur</title>
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; line-height: 1.4; }
-  button, input { font: inherit; }
-  .row { margin: 0.35rem 0; }
-  .member { margin: 0.35rem 0; }
-  #result { min-height: 1.4em; }
+  body {
+    margin: 0;
+    padding: 1.5rem 1.25rem 3rem;
+    max-width: 40rem;
+    background: #E4EBEF;
+    color: #1A2830;
+    font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+    font-size: 1.0625rem;
+    line-height: 1.45;
+  }
+  h1 {
+    margin: 0 0 1.35rem;
+    font-family: "Iowan Old Style", Palatino, Georgia, serif;
+    font-size: 1.35rem;
+    font-weight: 500;
+    line-height: 1.2;
+  }
+  h2 {
+    margin: 0 0 0.65rem;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  p { margin: 0; }
+  button,
+  input { font: inherit; color: inherit; }
+  button {
+    padding: 0.4rem 0.7rem;
+    background: #F7FBFC;
+    border: 1px solid #C3D0D6;
+  }
+  button:disabled { color: #5C6E76; }
+  input[type="text"] {
+    box-sizing: border-box;
+    padding: 0.45rem 0.6rem;
+    background: #F7FBFC;
+    border: 1px solid #C3D0D6;
+  }
+  input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: #1A2830;
+  }
+  button:focus-visible,
+  input:focus-visible {
+    outline: 2px solid #1A2830;
+    outline-offset: 3px;
+  }
+  #now {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .status-line {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+  .lamp {
+    box-sizing: border-box;
+    width: 0.72rem;
+    height: 0.72rem;
+    flex: 0 0 auto;
+    border: 2px solid #1A2830;
+    border-radius: 50%;
+    background: transparent;
+  }
+  .lamp.ok {
+    background: #E0A03A;
+    border-color: #E0A03A;
+  }
+  .lamp.reconnecting { border-color: #E0A03A; }
+  .lamp.down {
+    background: #9E3B45;
+    border-color: #9E3B45;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .lamp.reconnecting { animation: spur-pulse 1.5s ease-in-out infinite; }
+  }
+  @keyframes spur-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  #state-word { font-size: 1.05rem; }
+  #state-raw {
+    margin-left: auto;
+    font-size: 0.9rem;
+  }
+  #server-name {
+    margin: 0.55rem 0 0.1rem;
+    font-family: "Iowan Old Style", Palatino, Georgia, serif;
+    font-size: 2.15rem;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+  }
+  #pin-line,
+  #lock-line,
+  #updated,
+  #reason { margin-top: 0.15rem; }
+  .note { margin-top: 0.85rem; }
+  #servers { margin-top: 1.85rem; }
+  #find {
+    width: 100%;
+    margin: 0 0 0.15rem;
+  }
+  .member {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem 0.75rem;
+    padding: 0.85rem 0;
+    border-top: 1px solid #C3D0D6;
+  }
+  .member[hidden] { display: none; }
+  .member-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-right: 0.35rem;
+    overflow-wrap: anywhere;
+  }
+  .marks {
+    display: flex;
+    gap: 0.65rem;
+  }
+  .member-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem 0.55rem;
+  }
+  .auto {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  #empty-members { margin-top: 0.75rem; }
+  .global-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.95rem;
+  }
+  #auto-default { margin-top: 0.7rem; }
+  #auto-note { margin-top: 0.7rem; }
+  #notice {
+    min-height: 1.35em;
+    margin-top: 0.75rem;
+  }
+  #check { margin-top: 1.85rem; }
+  #check-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  #url {
+    flex: 1 1 12rem;
+    min-width: 0;
+  }
+  #result {
+    min-height: 1.35em;
+    margin-top: 0.6rem;
+  }
+  .fault { color: #9E3B45; }
+  @media (max-width: 32rem) {
+    .member-actions { flex-basis: 100%; }
+  }
 </style>
 </head>
 <body>
-<h1>Spur Gateway</h1>
-<div class="row" id="state">Состояние: </div>
-<div class="row" id="reason">Причина: </div>
-<div class="row" id="server">Сервер: </div>
-<div class="row" id="updated">Обновлено: </div>
-<div class="row" id="pin">Закрепление: </div>
-<div class="row" id="lock">Постоянное закрепление: </div>
-<p id="clash-note" hidden>Clash API недоступен</p>
-<p id="mock-note" hidden>Переключение недоступно в mock</p>
-<div id="members"></div>
-<p>
-  <button id="unpin" type="button">Снять закрепление</button>
-  <button id="unlock" type="button">Снять постоянное закрепление</button>
-</p>
-<p>
+<h1>Spur</h1>
+<section id="now">
+  <div class="status-line">
+    <span id="lamp" class="lamp other" aria-hidden="true"></span>
+    <span id="state-word"></span>
+    <span id="state-raw"></span>
+  </div>
+  <p id="server-name"></p>
+  <p id="pin-line" hidden>закреплено до перезапуска</p>
+  <p id="lock-line" hidden>постоянное закрепление</p>
+  <p id="updated"></p>
+  <p id="reason" hidden></p>
+</section>
+<p id="clash-note" class="note" hidden>Clash API недоступен</p>
+<p id="mock-note" class="note" hidden>Переключение недоступно в mock</p>
+<section id="servers">
+  <h2 id="servers-heading">Серверы</h2>
+  <input id="find" type="text" placeholder="Найти" aria-label="Найти сервер" spellcheck="false" autocomplete="off">
+  <div id="members"></div>
+  <p id="empty-members" hidden>Серверов нет</p>
+  <div class="global-actions">
+    <button id="unpin" type="button" data-hold="1" disabled>Снять закрепление</button>
+    <button id="unlock" type="button" data-hold="1" disabled>Снять постоянное закрепление</button>
+  </div>
   <button id="auto-default" type="button" hidden>Авто: все, включая новые</button>
-</p>
-<p id="auto-note"></p>
-<form id="check-form">
-  <input id="url" type="text" size="48" placeholder="https://example.com" spellcheck="false">
-  <button type="submit">Проверить</button>
-</form>
-<p id="result"></p>
+  <p id="auto-note"></p>
+</section>
+<p id="notice" class="fault" role="status"></p>
+<section id="check">
+  <h2>Проверка через шлюз</h2>
+  <form id="check-form">
+    <input id="url" type="text" placeholder="https://example.com" aria-label="Адрес" spellcheck="false">
+    <button type="submit">Проверить</button>
+  </form>
+  <p id="result" role="status"></p>
+</section>
 <script>
 let busy = false;
+let restoreAuto = "";
+
+const STATE_WORD = {
+  ok: "работает",
+  reconnecting: "переподключение",
+  down: "не работает",
+};
+
+function faultText(error) {
+  if (!error || error === "mock" || error === "clash") return "";
+  if (error === "unknown server") return "Такого сервера нет";
+  if (error === "invalid url") return "Нужен адрес http или https";
+  return error;
+}
+
+function formatSeconds(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value ?? "");
+  return String(Math.round(n * 10) / 10);
+}
+
+function formatUpdated(iso) {
+  const el = document.getElementById("updated");
+  el.title = iso || "";
+  if (!iso) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    el.hidden = false;
+    el.textContent = "обновлено " + iso;
+    return;
+  }
+  const time = new Intl.DateTimeFormat("ru", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+  const today = new Date();
+  const sameDay = date.getFullYear() === today.getFullYear()
+    && date.getMonth() === today.getMonth()
+    && date.getDate() === today.getDate();
+  const when = sameDay
+    ? time
+    : new Intl.DateTimeFormat("ru", { day: "numeric", month: "short" }).format(date) + " " + time;
+  el.hidden = false;
+  el.textContent = "обновлено " + when;
+}
 
 function applyBusy() {
   document.querySelectorAll("button, input").forEach((control) => {
-    control.disabled = busy;
+    const disabled = busy || control.dataset.hold === "1";
+    if (control.disabled !== disabled) control.disabled = disabled;
   });
 }
 
-async function refresh() {
-  const response = await fetch("/api/status");
-  const data = await response.json();
-  document.getElementById("state").textContent = "Состояние: " + (data.state || "");
-  document.getElementById("reason").textContent = "Причина: " + (data.reason || "");
-  document.getElementById("server").textContent = "Сервер: " + (data.server || "");
-  document.getElementById("updated").textContent = "Обновлено: " + (data.updated || "");
-  document.getElementById("pin").textContent = data.pinned
-    ? "Закрепление: " + (data.pin || "да")
-    : "Закрепление: нет";
-  document.getElementById("lock").textContent = data.locked
-    ? "Постоянное закрепление: " + (data.lock || "да")
-    : "Постоянное закрепление: нет";
-  document.getElementById("clash-note").hidden = data.clash !== "unavailable";
-  document.getElementById("mock-note").hidden = !data.mock;
-  const autoOn = new Set(data.auto_default ? (data.members || []) : (data.auto || []));
+function applyFind() {
+  const query = document.getElementById("find").value.trim().toLowerCase();
+  document.querySelectorAll("#members .member").forEach((row) => {
+    const name = (row.dataset.name || "").toLowerCase();
+    row.hidden = query !== "" && !name.includes(query);
+  });
+}
+
+function focusedAuto() {
+  const active = document.activeElement;
+  if (active && active.dataset && active.dataset.auto && active.closest("#members")) {
+    return active.dataset.auto;
+  }
+  return "";
+}
+
+function focusAuto(name) {
+  if (!name || typeof CSS === "undefined" || !CSS.escape) return;
+  const next = document.querySelector('#members input[data-auto="' + CSS.escape(name) + '"]');
+  if (next) next.focus();
+}
+
+function renderNow(data) {
+  const state = data.state || "";
+  const known = state === "ok" || state === "reconnecting" || state === "down";
+  document.getElementById("lamp").className = "lamp " + (known ? state : "other");
+  document.getElementById("state-word").textContent = Object.prototype.hasOwnProperty.call(STATE_WORD, state)
+    ? STATE_WORD[state]
+    : state;
+  document.getElementById("state-raw").textContent = state;
+  document.getElementById("server-name").textContent = data.server || "";
+  document.getElementById("pin-line").hidden = !data.pinned;
+  document.getElementById("lock-line").hidden = !data.locked;
+  const reason = data.reason || "";
+  const reasonEl = document.getElementById("reason");
+  reasonEl.hidden = !reason;
+  reasonEl.textContent = reason;
+  formatUpdated(data.updated || "");
+  document.getElementById("unpin").dataset.hold = data.pinned ? "" : "1";
+  document.getElementById("unlock").dataset.hold = data.locked ? "" : "1";
+}
+
+function renderMembers(data) {
   const box = document.getElementById("members");
+  const live = !data.mock && data.clash !== "unavailable";
+  const members = live ? (data.members || []) : [];
+  const autoOn = new Set(data.auto_default ? members : (data.auto || []));
   box.replaceChildren();
-  if (!data.mock) {
-    for (const tag of data.members || []) {
-      const row = document.createElement("div");
-      row.className = "member";
-      row.append(document.createTextNode(tag + " "));
+  document.getElementById("servers-heading").hidden = !live;
+  document.getElementById("find").hidden = members.length === 0;
+  document.getElementById("empty-members").hidden = !(live && members.length === 0);
+  for (const tag of members) {
+    const row = document.createElement("div");
+    row.className = "member";
+    row.dataset.name = tag;
+
+    const name = document.createElement("div");
+    name.className = "member-name";
+    name.textContent = tag;
+    row.append(name);
+
+    const marks = document.createElement("div");
+    marks.className = "marks";
+    if (tag === data.server) {
+      const now = document.createElement("span");
+      now.textContent = "сейчас";
+      marks.append(now);
+    }
+    if (data.locked && tag === data.lock) {
+      const locked = document.createElement("span");
+      locked.textContent = "постоянно";
+      marks.append(locked);
+    }
+    if (marks.childNodes.length) row.append(marks);
+
+    const actions = document.createElement("div");
+    actions.className = "member-actions";
+    if (tag !== data.server) {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = "Переключить";
-      button.addEventListener("click", () => post("/api/switch", { name: tag }));
-      row.append(button);
-      const lockButton = document.createElement("button");
-      lockButton.type = "button";
-      lockButton.textContent = "Постоянно";
-      lockButton.addEventListener("click", () => post("/api/lock", { name: tag }));
-      row.append(document.createTextNode(" "));
-      row.append(lockButton);
-      const autoLabel = document.createElement("label");
-      const autoBox = document.createElement("input");
-      autoBox.type = "checkbox";
-      autoBox.dataset.auto = tag;
-      autoBox.checked = autoOn.has(tag);
-      autoBox.addEventListener("change", () => {
-        const names = [];
-        document.querySelectorAll("#members input[data-auto]").forEach((input) => {
-          if (input.checked) names.push(input.dataset.auto);
-        });
-        post("/api/auto", { names });
-      });
-      autoLabel.append(autoBox, document.createTextNode(" Авто"));
-      row.append(document.createTextNode(" "));
-      row.append(autoLabel);
-      box.append(row);
+      button.addEventListener("click", () => act("/api/switch", { name: tag }));
+      actions.append(button);
     }
+    const lockButton = document.createElement("button");
+    lockButton.type = "button";
+    lockButton.textContent = "Постоянно";
+    lockButton.addEventListener("click", () => act("/api/lock", { name: tag }));
+    actions.append(lockButton);
+
+    const autoLabel = document.createElement("label");
+    autoLabel.className = "auto";
+    const autoBox = document.createElement("input");
+    autoBox.type = "checkbox";
+    autoBox.dataset.auto = tag;
+    autoBox.checked = autoOn.has(tag);
+    autoBox.addEventListener("change", () => {
+      const names = [];
+      document.querySelectorAll("#members input[data-auto]").forEach((input) => {
+        if (input.checked) names.push(input.dataset.auto);
+      });
+      act("/api/auto", { names });
+    });
+    autoLabel.append(autoBox, document.createTextNode(" Авто"));
+    actions.append(autoLabel);
+    row.append(actions);
+    box.append(row);
   }
+}
+
+async function refresh() {
+  const keep = restoreAuto || focusedAuto();
+  let data;
+  try {
+    const response = await fetch("/api/status");
+    data = await response.json();
+  } catch {
+    document.getElementById("notice").textContent = "Нет ответа";
+    return;
+  }
+  renderNow(data);
+  document.getElementById("clash-note").hidden = data.clash !== "unavailable";
+  document.getElementById("mock-note").hidden = !data.mock;
+  renderMembers(data);
+  applyFind();
   document.getElementById("auto-note").textContent = data.auto_default
     ? "Автопереключение: все серверы, пока список не изменён."
     : "Автопереключение только на отмеченные. Неотмеченные и новые серверы сами не выбираются.";
   document.getElementById("auto-default").hidden = !!data.auto_default || !!data.mock;
   applyBusy();
+  if (!busy) focusAuto(keep);
 }
 
 async function post(path, payload) {
+  const active = document.activeElement;
+  if (active && active.dataset && active.dataset.auto) restoreAuto = active.dataset.auto;
   busy = true;
   applyBusy();
   try {
@@ -116,32 +419,41 @@ async function post(path, payload) {
     const data = await response.json();
     await refresh();
     return data;
+  } catch {
+    document.getElementById("notice").textContent = "Нет ответа";
+    return null;
   } finally {
     busy = false;
     applyBusy();
+    if (restoreAuto) {
+      focusAuto(restoreAuto);
+      restoreAuto = "";
+    }
   }
 }
 
-document.getElementById("unpin").addEventListener("click", () => {
-  post("/api/unpin", {});
-});
+async function act(path, payload) {
+  const data = await post(path, payload);
+  if (!data) return;
+  document.getElementById("notice").textContent = faultText(data.error);
+}
 
-document.getElementById("unlock").addEventListener("click", () => {
-  post("/api/unlock", {});
-});
-
-document.getElementById("auto-default").addEventListener("click", () => {
-  post("/api/auto", { default: true });
-});
-
+document.getElementById("find").addEventListener("input", applyFind);
+document.getElementById("unpin").addEventListener("click", () => act("/api/unpin", {}));
+document.getElementById("unlock").addEventListener("click", () => act("/api/unlock", {}));
+document.getElementById("auto-default").addEventListener("click", () => act("/api/auto", { default: true }));
 document.getElementById("check-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = await post("/api/check", { url: document.getElementById("url").value });
-  const error = data.error || "";
-  const code = data.http_code == null ? "" : data.http_code;
-  const seconds = data.seconds == null ? "" : data.seconds;
-  document.getElementById("result").textContent =
-    "Код: " + code + " Время: " + seconds + " Ошибка: " + error;
+  if (!data) return;
+  const result = document.getElementById("result");
+  if (data.ok) {
+    result.classList.remove("fault");
+    result.textContent = data.http_code + " за " + formatSeconds(data.seconds) + " с";
+    return;
+  }
+  result.classList.add("fault");
+  result.textContent = faultText(data.error);
 });
 
 refresh();

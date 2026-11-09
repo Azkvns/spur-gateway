@@ -308,10 +308,16 @@ class AdminServerTests(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertIn("text/html", headers.get("Content-Type", ""))
         text = body.decode()
+        self.assertIn('id="now"', text)
+        self.assertIn('id="members"', text)
+        self.assertIn('id="check-form"', text)
+        self.assertIn('id="find"', text)
         self.assertIn("Проверить", text)
         self.assertIn("/api/status", text)
         self.assertIn("Авто", text)
         self.assertIn("/api/auto", text)
+        self.assertNotIn("fonts.googleapis", text)
+        self.assertNotIn("<link", text)
         self.assertIsNone(headers.get("Access-Control-Allow-Origin"))
 
     def test_http_lock_and_unlock(self):
